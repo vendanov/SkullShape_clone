@@ -60,13 +60,40 @@ def coreg_mask(ref,flo,out):
 
     sitk.WriteImage(image1_res,out)
 
+def to_rigid_transf(matrix,out,scale_out):
+    affine_matrix = np.loadtxt(matrix)
+
+    # Perform SVD decomposition
+    U, s, V = np.linalg.svd(affine_matrix[:3, :3])
+
+    # Extract the rotation and translation matrices
+    rotation_matrix = U @ V
+    translation_matrix = affine_matrix[:3, 3]
+
+    res = np.eye(4)
+
+    res[:3, :3] = rotation_matrix
+    res[:3, 3] = affine_matrix[:3, 3]
+
+
+    np.savetxt(out,res)
+
+    res = np.eye(4)
+    res[:3, :3]= np.diag(s)
+    np.savetxt(scale_out,res)
+    # Print the rigid component
+    print('Rotation Matrix:\n',rotation_matrix)
+    print('Translation Matrix:\n',translation_matrix)
+    print("Scalling: \n",s)
+
 ########
 
 
 
 rule all:
     input:
-        expand("{dirname}/coregistered_head.nii.gz",dirname=MICE_FOLDERS)
+        expand("{dirname}/scalling_head.mat",dirname=MICE_FOLDERS)
+
 
 
 
@@ -103,10 +130,9 @@ rule reorient_mask_and_im:
         #shell(cmd)
 
 
-
 rule linear_coregistration:
     input: "{dirname}/oriented_mask.nii.gz","{dirname}/oriented_image.nii.gz"
-    output: "{dirname}/coregistered_head.nii.gz"
+    output: "{dirname}/coregistered_head.nii.gz","{dirname}/affine_head.mat"
     threads: 1
     run:
 
@@ -116,12 +142,36 @@ rule linear_coregistration:
 
         ref_mask_1 = REF_IMAGE/"oriented_mask.nii.gz"
         or_ref_im = REF_IMAGE / 'oriented_image.nii.gz'
-        oriented_mask_2 = REF_IMAGE / "oriented_"
+
         cmd = "reg_aladin -ref {refim} -rmask {rmask} -flo {flim} -fmask {fmask}".format(refim=or_ref_im,
             rmask=ref_mask_1,flim = input[1],fmask=input[0])
         cmd += " -speeeeed -cog -res " + str(out_file)
+        cmd += " -aff " + output[1]
 
         shell(cmd)
+
+
+
+
+
+rule to_rigid:
+    input: "{dirname}/affine_head.mat"
+    output: "{dirname}/rigid_head.mat", "{dirname}/scalling_head.mat"
+    threads: 1
+    run:
+        to_rigid_transf(input[0],output[0],output[1])
+
+rule whole_head_rigid:
+    input: "{dirname}/affine_head.mat", "{dirname}/ct_image_.nii.gz"
+    output: "{dirname}/rigid_head.nii.gz",
+    threads: 1
+    run:
+        or_ref_im = REF_IMAGE / 'oriented_image.nii.gz'
+
+        cmd = "reg_resample -ref {refim} -flo {flim} -trans {trmat} -res {outmat}".format(refim=or_ref_im,
+            flim=input[1],trmat=input[0],outmat = output[0])
+
+
 
 
 
