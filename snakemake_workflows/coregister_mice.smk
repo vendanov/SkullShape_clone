@@ -6,11 +6,10 @@ import SimpleITK as sitk
 import pathlib
 from scipy.ndimage.measurements import center_of_mass
 import numpy as np
-
-
+from scipy.interpolate import interpn
 PROCESS_DIR = pathlib.Path('/home/varhai/PRIMUS/data/83_BIOINFORMATICS/Igor/mouse_skull_workdir')
 REF_IMAGE = pathlib.Path('/home/varhai/PRIMUS/data/83_BIOINFORMATICS/Igor/reference_image/')
-PARAMETER_FILE = pathlib.Path("/home/varhai/PRIMUS/data/83_BIOINFORMATICS/Igor/Parameters_Stable_NL.txt")
+PARAMETER_FILE = pathlib.Path("/home/varhai/PRIMUS/data/83_BIOINFORMATICS/Igor/workdir/Parameters_Stable_NL.txt")
 ref_im = REF_IMAGE / 'ct_image_.nii.gz'
 ref_mask = REF_IMAGE / 'bone_coregistration_mask.nii.gz'
 
@@ -187,11 +186,11 @@ def non_rigid_registration(flo_im: str, ref_im: str, out_transform: str, out_ima
 
 
 
-def reverse_transform_mesh_points(mesh_points, inverse_transform):
+def transform_mesh_points(mesh_points, transform):
     """
 
     :param mesh_points: points to convert
-    :param inverse_transform:
+    :param transform:
     :return:
     """
     num_points = len(mesh_points)
@@ -199,13 +198,37 @@ def reverse_transform_mesh_points(mesh_points, inverse_transform):
 
     for i in range(num_points):
         point = mesh_points[i]
-        transformed_point = inverse_transform.TransformPoint(point)
+        transformed_point = transform.TransformPoint(point)
         transformed_points[i] = transformed_point
 
     return transformed_points
 
-def non_rigid_reverse_transformation(out_name: str,mesh_ref_space: str,
-                                     deformation_field_file:str, linear_transform = None):
+def read_output_points(filename: str) -> np.ndarray:
+
+    with open(filename,"rt") as file:
+        lines = file.readlines()
+        points = []
+
+        #print(len(lines))
+        for l in lines:
+            #print(l.split(" OutputPoint = [ ")[1].split("]")[0].split())
+            point = [float(x) for x in l.split(" OutputPoint = [ ")[1].split("]")[0].split()]
+            points.append(point)
+    return np.array(points)
+
+
+
+
+def replace_points_in_mesh(out_name: str, mesh_ref_space: str,
+                                     transformed_poits_file:str, linear_transform = None):
+    """
+    replaces points to one produced in transormix and save meshe in target file
+    :param out_name:
+    :param mesh_ref_space:
+    :param transformed_poits_file:
+    :param linear_transform:
+    :return:
+    """
     reader = vtk.vtkOBJReader()
     reader.SetFileName(mesh_ref_space)
     reader.Update()
@@ -215,31 +238,14 @@ def non_rigid_reverse_transformation(out_name: str,mesh_ref_space: str,
     # Get the number of points
     num_points = points.GetNumberOfPoints()
 
-    # Create an empty list to store the coordinates
-    point_list = []
+    transformed_points = read_output_points(transformed_poits_file)
 
-    # Iterate over the points and retrieve their coordinates
-    for i in range(num_points):
-        coords = points.GetPoint(i)
-        point_list.append(list(coords))
+    res_pts = vtk.vtkPoints()
+    for pt in transformed_points.tolist():
+        res_pts.InsertNextPoint(pt)
 
-    # Print the resulting list of lists
-
-
-    transform = sitk.ReadTransform(deformation_field_file)
-    inverse_transform = sitk.DisplacementFieldTransform(transform.GetDisplacementField())
-    inverse_transform = inverse_transform.GetInverse()
-
-    points_native = reverse_transform_mesh_points(point_list,inverse_transform)
-
-    # Create a new vtkPoints object and set the transformed points
-    transformed_points = vtk.vtkPoints()
-    for point in points_native:
-        transformed_points.InsertNextPoint(point)
-
-    # Create a new mesh with the transformed points
     mesh_transformed = vtk.vtkPolyData()
-    mesh_transformed.SetPoints(transformed_points)
+    mesh_transformed.SetPoints(res_pts)
     mesh_transformed.SetPolys(mesh.GetPolys())
 
     # Write the transformed mesh to an OBJ file
@@ -254,7 +260,7 @@ def non_rigid_reverse_transformation(out_name: str,mesh_ref_space: str,
 
 rule all:
     input:
-        expand("{dirname}/cpp_transformation.hdf5",dirname=MICE_FOLDERS)
+        expand("{dirname}/head_affine_registered.obj",dirname=MICE_FOLDERS)
 
 
 rule otsu_threshold:
@@ -334,21 +340,38 @@ rule linear_coregistration:
 
 rule non_rigid_registration_rule:
     input: "{dirname}/coregistered_head.nii.gz"
-    output: "{dirname}/nonlin_image.nii.gz","{dirname}/cpp_transformation.hdf5"
+    output: "{dirname}/nonlin_image.nii.gz","{dirname}/nl_transformation_params.txt"
     threads: 1
     run:
-        or_ref_im = REF_IMAGE / 'average_image.nii.gz'
-        non_rigid_registration(flo_im=input[0], ref_im=str(or_ref_im),
+        # script coregisters reference image (choosen as default to each linearly registered head for reverse mesh generation
+        or_ref_im = REF_IMAGE / 'oriented_image.nii.gz'
+        non_rigid_registration(flo_im=str(or_ref_im), ref_im=input[0],
             out_transform=output[1],out_image=output[0],param_file=str(PARAMETER_FILE))
 
+
+
+
 rule inverse_transform_mesh_rule:
-    input: "{dirname}/cpp_transformation.hdf5"
+    input: "{dirname}/nl_transformation_params.txt"
     output: "{dirname}/head_affine_registered.obj",
     threads: 1
     run:
-        or_ref_im = REF_IMAGE / "smooth_low.obj"
-        non_rigid_reverse_transformation(out_name=output[0]
-            ,mesh_ref_space=str(or_ref_im),deformation_field_file=input[0])
+        dir1name = str(pathlib.Path(input[0]).parent)
+        or_ref_mesh_pts = REF_IMAGE / "mesh_points.txt"
+        cmd = f"transformix -tp {input[0]} -out {dir1name} -def {str(or_ref_mesh_pts)}"
+
+        shell (cmd)
+        or_ref_im = REF_IMAGE / "oriented_mesh.obj"
+        print(or_ref_im)
+
+        mesh_transformed_pts = str(  pathlib.Path(dir1name)/"outputpoints.txt" )
+
+        replace_points_in_mesh(out_name=output[0],
+            mesh_ref_space=str(or_ref_im),transformed_poits_file=mesh_transformed_pts)
+
+        #shell("rm -rf " + mesh_transformed_pts )
+
+
 
 
 
