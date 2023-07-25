@@ -1,3 +1,4 @@
+import os
 import pathlib
 import subprocess
 from typing import Union, Tuple
@@ -7,20 +8,25 @@ import pathlib
 from scipy.ndimage.measurements import center_of_mass
 import numpy as np
 from scipy.interpolate import interpn
+from vtkmodules.util import numpy_support
+
 PROCESS_DIR = pathlib.Path('/home/varhai/PRIMUS/data/83_BIOINFORMATICS/Igor/mouse_skull_workdir')
 REF_IMAGE = pathlib.Path('/home/varhai/PRIMUS/data/83_BIOINFORMATICS/Igor/reference_image/')
 PARAMETER_FILE = pathlib.Path("/home/varhai/PRIMUS/data/83_BIOINFORMATICS/Igor/workdir/Parameters_Stable_NL.txt")
 ref_im = REF_IMAGE / 'ct_image_.nii.gz'
 ref_mask = REF_IMAGE / 'bone_coregistration_mask.nii.gz'
+MESH_TRANSFORM_SCRIPT = "/home/varhai/PRIMUS/data/83_BIOINFORMATICS/Igor/scripts/support/convert_mesh.py"
+SLICER_CORE = "/home/varhai/Slicer-5.2.2-linux-amd64/Slicer"
 
-#MICE_FOLDERS = [x for x in PROCESS_DIR.iterdir() if x.is_dir() and len(list(x.iterdir()))>0 ]
+import itk
+MICE_FOLDERS = [x for x in PROCESS_DIR.iterdir() if x.is_dir() and len(list(x.iterdir()))>0 ]
 
 #MICE_FOLDERS = [x for x in PROCESS_DIR.iterdir() if x.is_dir() ]
 #MICE_FOLDERS = [REF_IMAGE ]
 #test mouse
 #MICE_FOLDERS = [pathlib.Path(r"/home/varhai/PRIMUS/data/83_BIOINFORMATICS/Igor/mouse_skull_workdir/wt_M_82Z-CF113/") ]
-MICE_FOLDERS = [pathlib.Path(r"/home/varhai/PRIMUS/data/83_BIOINFORMATICS/Igor/mouse_skull_workdir/wt_M_82Z-10911/"),
-                pathlib.Path(r"/home/varhai/PRIMUS/data/83_BIOINFORMATICS/Igor/mouse_skull_workdir/wt_M_82Z-CF279/")]
+# MICE_FOLDERS = [pathlib.Path(r"/home/varhai/PRIMUS/data/83_BIOINFORMATICS/Igor/mouse_skull_workdir/wt_M_82Z-10911/"),
+#                 pathlib.Path(r"/home/varhai/PRIMUS/data/83_BIOINFORMATICS/Igor/mouse_skull_workdir/wt_M_82Z-CF279/")]
 
 def otsu_treshold(input_file: pathlib.Path, out_file: pathlib.Path):
     # Load image
@@ -357,22 +363,20 @@ rule inverse_transform_mesh_rule:
     threads: 1
     run:
         dir1name = str(pathlib.Path(input[0]).parent)
-        or_ref_mesh_pts = REF_IMAGE / "mesh_points.txt"
-        cmd = f"transformix -tp {input[0]} -out {dir1name} -def {str(or_ref_mesh_pts)}"
+
+        #generate deformation field
+        cmd = f"transformix -tp {input[0]} -out {dir1name} -def all"
 
         shell (cmd)
-        or_ref_im = REF_IMAGE / "oriented_mesh.obj"
-        print(or_ref_im)
+        or_ref_mesh = REF_IMAGE / "oriented_mesh.obj"
+        print(or_ref_mesh)
 
-        mesh_transformed_pts = str(  pathlib.Path(dir1name)/"outputpoints.txt" )
+        def_field_file  = dir1name + os.sep + "deformationField.nii.gz"
+        ###deform original mesh
 
-        replace_points_in_mesh(out_name=output[0],
-            mesh_ref_space=str(or_ref_im),transformed_poits_file=mesh_transformed_pts)
-
-        #shell("rm -rf " + mesh_transformed_pts )
-
-
-
+        cmd = f"xvfb-run -a  {SLICER_CORE} --python-script {MESH_TRANSFORM_SCRIPT} {def_field_file} {or_ref_mesh} {output[0]}  --testing --no-splash --no-main-window"
+        shell(cmd)
+        shell("rm -rf " + def_field_file )
 
 
 
