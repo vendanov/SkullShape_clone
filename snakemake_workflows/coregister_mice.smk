@@ -2,32 +2,42 @@ import os
 import pathlib
 import subprocess
 from typing import Union, Tuple
+
+import scipy
 import vtk
 import SimpleITK as sitk
-import pathlib
+from pathlib import Path
+import itk
 from scipy.ndimage.measurements import center_of_mass
 import numpy as np
 from scipy.interpolate import interpn
 from vtkmodules.util import numpy_support
 
-PROCESS_DIR = pathlib.Path('/home/varhai/PRIMUS/data/83_BIOINFORMATICS/Igor/mouse_skull_workdir')
+
+
+PROCESS_DIR = Path(config['process_dir'])
+print(PROCESS_DIR)
+#pathlib.Path('/home/varhai/PRIMUS/data/83_BIOINFORMATICS/Igor/mouse_skull_workdir')
 REF_IMAGE = pathlib.Path('/home/varhai/PRIMUS/data/83_BIOINFORMATICS/Igor/reference_image/')
-PARAMETER_FILE = pathlib.Path("/home/varhai/PRIMUS/data/83_BIOINFORMATICS/Igor/workdir/Parameters_Stable_NL.txt")
+PARAMETER_FILE_NONLIN = pathlib.Path("/home/varhai/PRIMUS/data/83_BIOINFORMATICS/Igor/workdir/Parameters_Stable_NL.txt")
+PARAMETER_FILE_LIN = pathlib.Path("/home/varhai/PRIMUS/data/83_BIOINFORMATICS/Igor/scripts/models/affine.txt")
 ref_im = REF_IMAGE / 'ct_image_.nii.gz'
 ref_mask = REF_IMAGE / 'bone_coregistration_mask.nii.gz'
 MESH_TRANSFORM_SCRIPT = "/home/varhai/PRIMUS/data/83_BIOINFORMATICS/Igor/scripts/support/convert_mesh.py"
 SLICER_CORE = "/home/varhai/Slicer-5.2.2-linux-amd64/Slicer"
 
-import itk
+
 MICE_FOLDERS = [x for x in PROCESS_DIR.iterdir() if x.is_dir() and len(list(x.iterdir()))>0 ]
 
 #MICE_FOLDERS = [x for x in PROCESS_DIR.iterdir() if x.is_dir() ]
 #MICE_FOLDERS = [REF_IMAGE ]
 #test mouse
-#MICE_FOLDERS = [pathlib.Path(r"/home/varhai/PRIMUS/data/83_BIOINFORMATICS/Igor/mouse_skull_workdir/wt_M_82Z-CF113/") ]
-# MICE_FOLDERS = [pathlib.Path(r"/home/varhai/PRIMUS/data/83_BIOINFORMATICS/Igor/mouse_skull_workdir/wt_M_82Z-10911/"),
-#                 pathlib.Path(r"/home/varhai/PRIMUS/data/83_BIOINFORMATICS/Igor/mouse_skull_workdir/wt_M_82Z-CF279/")]
-
+#MICE_FOLDERS = [pathlib.Path(r"/home/varhai/PRIMUS/data/83_BIOINFORMATICS/Igor/mouse_skull_workdir/wt_M_82Z-CG443/") ]
+# MICE_FOLDERS = [pathlib.Path(r"/home/varhai/PRIMUS/data/83_BIOINFORMATICS/Igor/mouse_skull_workdir/wt_F_82Z-11537/"),
+#                 pathlib.Path(r"/home/varhai/PRIMUS/data/83_BIOINFORMATICS/Igor/mouse_skull_workdir/wt_F_82Z-09866/")]
+### testfor new linreg
+ # MICE_FOLDERS = [pathlib.Path(r"/home/varhai/PRIMUS/data/83_BIOINFORMATICS/Igor/mouse_ablormal/Cog5_F_E64-G2766/"),
+ #                 pathlib.Path(r"/home/varhai/PRIMUS/data/83_BIOINFORMATICS/Igor/mouse_ablormal/Cog5_M_E64-G2762/")]
 def otsu_treshold(input_file: pathlib.Path, out_file: pathlib.Path):
     # Load image
     img = sitk.ReadImage(input_file)
@@ -70,6 +80,7 @@ def reorient_normal_image(image_orig :sitk.Image,label_orig:sitk.Image):
 
     image_result = sitk.Image(image_orig)
     direction = label_shape_filter.GetOrientedBoundingBoxDirection(1)
+
     # if get_frontal_voxels(label_orig) > get_frontal_voxels(label_orig,False):
     #     print(True)
     # return
@@ -130,6 +141,59 @@ def asses_registration_quality(registered_image: Union[str,pathlib.Path], refere
     return ssd
 
 
+# def register_affine(ref_image,flo_im,output_folder,out_image):
+#     cmd =  f"elastix -f {str(ref_image)} -m {str(flo_im)} -p {str(PARAMETER_FILE_LIN)} " \
+#            # f"-fMask {str(ref_image.parent / 'oriented_mask.nii.gz')} " \
+#            # f"-mMask {str(flo_im.parent / 'oriented_mask.nii.gz')} " \
+#            f"-out {str(output_folder)}"
+#     shell(cmd)
+#
+#     shell(f"mv -f {str(output_folder/ 'result.0.nii.gz')} {str(out_image)}")
+#
+#     transform_parameters = sitk.ReadParameterFile(str(output_folder/ 'TransformParameters.0.txt') )
+#     linear_parameters = []
+#     for param in transform_parameters:
+#         if 'Transform' in param[0]:
+#             linear_parameters.extend(list(map(float, param[1:])))
+#
+#     # Extract the affine transformation matrix from the linear parameters
+#     affine_matrix = np.array([[linear_parameters[0], linear_parameters[1], linear_parameters[2], linear_parameters[3]],
+#                               [linear_parameters[4], linear_parameters[5], linear_parameters[6], linear_parameters[7]],
+#                               [linear_parameters[8], linear_parameters[9], linear_parameters[10], linear_parameters[11]],
+#                               [0.0, 0.0, 0.0, 1.0]])
+#     #write transformation
+#     res = ""
+#     for i in range(affine_matrix.shape[0]):
+#         res += " ".join([str(x) for x in affine_matrix[i].tolist()]) + "\n"
+#
+#     with open(str(output_folder/ "affine_head.mat"),"wt") as f:
+#         f.write(res)
+
+# def register_affine(ref_image,flo_im,output_folder,out_image):
+#     fixed_image = sitk.ReadImage(ref_image,sitk.sitkFloat32)
+#     moving_image = sitk.ReadImage(flo_im,sitk.sitkFloat32)
+#     initial_transform = sitk.CenteredTransformInitializer(fixed_image,
+#         moving_image,
+#         sitk.Euler3DTransform(),
+#         sitk.CenteredTransformInitializerFilter.MOMENTS)
+#
+#     registration_method = sitk.ImageRegistrationMethod()
+#     registration_method.SetMetricAsCorrelation()
+#     # registration_method.SetInterpolator(sitk.sitkLinear) #2. Replace with sitkLinear
+#     registration_method.SetOptimizerAsLBFGSB(gradientConvergenceTolerance=1e-5,
+#         numberOfIterations=20,
+#         maximumNumberOfCorrections=5,
+#         maximumNumberOfFunctionEvaluations=1000,
+#         costFunctionConvergenceFactor=1e+7)  #1. Increase to 1000
+#
+#     # Don't optimize in-place, we would like to run this cell multiple times
+#     registration_method.SetInitialTransform(initial_transform,inPlace=False)
+#
+#
+
+
+
+
 def register_flip(floating_image: Union[str,pathlib.Path],
                   reference_image: Union[str,pathlib.Path], float_mask:Union[str,pathlib.Path],
                   ref_mask :Union[str,pathlib.Path],
@@ -160,21 +224,79 @@ def register_flip(floating_image: Union[str,pathlib.Path],
 
 
     shell(cmd)
-    return asses_registration_quality(outputs[0],reference_image)
+    #return asses_registration_quality(outputs[0],reference_image)
+
+
+def generate_orienter(fixed_image,moving_image):
+    initial_transform = sitk.CenteredTransformInitializer(fixed_image,
+        moving_image,
+        sitk.Euler3DTransform(),
+        sitk.CenteredTransformInitializerFilter.GEOMETRY)
+
+    registration_method = sitk.ImageRegistrationMethod()
+
+
+    registration_method.SetInterpolator(sitk.sitkLinear)
+    registration_method.SetMetricAsCorrelation()
+
+    registration_method.SetOptimizerAsExhaustive(numberOfSteps=[4, 4, 0, 0, 0, 0],stepLength=np.pi / 4)
+    registration_method.SetOptimizerScales([1, 1, 1, 1, 1, 1])
+    # Don't optimize in-place, we would possibly like to run this cell multiple times.
+    registration_method.SetInitialTransform(initial_transform)
+    return registration_method
 
 
 
-def change_z_orientation( inp):
-    inim = sitk.ReadImage(inp)
-    direction = np.reshape(inim.GetDirection(),(3,3))
-    direction[:,2] = direction[:,2] * -1
-    direction[:, 0] = direction[:, 0] * -1
-    inim.SetDirection(list(np.reshape(direction,-1)))
-    sitk.WriteImage(inim,fileName=inp)
+def change_orientation( refim_file, flo_im_file, flo_mask_file=None):
+    fixed_image = sitk.ReadImage(refim_file,sitk.sitkFloat32)
+    moving_image = sitk.ReadImage(flo_im_file,sitk.sitkFloat32)
 
 
 
-# def non_rigid_registration(flo_im: str, ref_im: str
+    registration_method = generate_orienter(fixed_image,moving_image)
+
+    # Connect all of the observers so that we can perform plotting during registration.
+
+    final_transform = registration_method.Execute(fixed_image,moving_image)
+
+    # final_metric1 = registration_method.GetMetricValue()
+    # print("fir ",final_metric1)
+    #
+    # ### flip image
+    #
+    # direction = np.reshape(moving_image.GetDirection(),(3,3))
+    # direction[:,2] = direction[:,2] * -1
+    # direction[:, 0] = direction[:, 0] * -1
+    # moving_image.SetDirection(list(np.reshape(direction,-1)))
+    # #
+    # registration_method = generate_orienter(fixed_image,moving_image)
+    # final_transform2 = registration_method.Execute(fixed_image,moving_image)
+    # final_metric2 = registration_method.GetMetricValue()
+    # print("sec ",final_metric2 )
+    # if final_metric2 < final_metric1:
+    #
+    #     # reflip_image(flo_im_file)
+    #     # reflip_image(flo_mask_file)
+    #     final_transform = final_transform2
+    #
+    #
+    # else:
+    #     moving_image = sitk.ReadImage(flo_im_file,sitk.sitkFloat32)
+
+
+    # im  resample
+    moving_resampled = sitk.Resample(moving_image,fixed_image,final_transform,sitk.sitkNearestNeighbor,0.0,moving_image.GetPixelID())
+    sitk.WriteImage(moving_resampled,flo_im_file)
+    # mask resample
+    if flo_mask_file is not None:
+        flo_mask = sitk.ReadImage(flo_mask_file,sitk.sitkUInt8)
+        print(flo_mask_file)
+        moving_resampled = sitk.Resample(flo_mask,fixed_image,final_transform,sitk.sitkNearestNeighbor,0.0,flo_mask.GetPixelID())
+        sitk.WriteImage(moving_resampled,flo_mask_file)
+
+
+
+# def non_rigid_registration(flo_im: str, ref_im: strcd
 #                            , out_transform:str, out_image: str):
 #
 #     cmd = f"reg_f3d -ref {ref_im} -flo {flo_im} -cpp {out_transform} -res {out_image}"
@@ -278,7 +400,18 @@ rule otsu_threshold:
     run:
         inp_file = pathlib.Path(input[0])
         out_file = pathlib.Path(output[0])
+
         otsu_treshold(inp_file,out_file)
+
+
+def reflip_image( image_file):
+    moving_image = sitk.ReadImage(fileName=image_file)
+    direction = np.reshape(moving_image.GetDirection(),(3,3))
+    direction[:,2] = direction[:,2] * -1
+    direction[:, 0] = direction[:, 0] * -1
+
+    moving_image.SetDirection(list(np.reshape(direction,-1)))
+    sitk.WriteImage(moving_image,image_file)
 
 
 rule reorient_mask_and_im:
@@ -291,12 +424,19 @@ rule reorient_mask_and_im:
         flo_im = mask.parent / "ct_image_.nii.gz"
 
         mask_im = sitk.ReadImage(mask)
+        or_ref_im = REF_IMAGE / "oriented_image.nii.gz"
+
+        shell(f"cp -f {str(flo_im)} {output[1]}")
+        shell(f"cp -f {input[0]} {output[0]}")
+        change_orientation(or_ref_im,flo_im_file=output[1],flo_mask_file=Path(output[0]))
+
+
         ## reorient main image
-        image1_res = reorient_normal_image(sitk.ReadImage(flo_im),mask_im)
-        sitk.WriteImage(image1_res,output[1])
+        #image1_res = reorient_normal_image(sitk.ReadImage(flo_im),mask_im)
+        #sitk.WriteImage(image1_res,output[1])
         ###reorient mask
-        image1_res = reorient_normal_image(mask_im,mask_im)
-        sitk.WriteImage(image1_res,output[0])
+        #image1_res = reorient_normal_image(mask_im,mask_im)
+        #sitk.WriteImage(image1_res,output[0])
         #shell(cmd)
 
 
@@ -320,39 +460,46 @@ rule whole_head_rigid:
         cmd = "reg_resample -ref {refim} -flo {flim} -trans {trmat} -res {outmat}".format(refim=or_ref_im,
             flim=input[1],trmat=input[0],outmat = output[0])
 
+# rule linear_coregistration:
+#     input: "{dirname}/oriented_mask.nii.gz","{dirname}/oriented_image.nii.gz"
+#     output: "{dirname}/coregistered_head.nii.gz","{dirname}/affine_head.mat"
+#     threads: 2
+#     run:
+#
+#         out_file = pathlib.Path(output[0])
+#
+#         ref_mask_1 = REF_IMAGE/"oriented_mask.nii.gz"
+#         or_ref_im = REF_IMAGE / 'oriented_image.nii.gz'
+#
+#         register_affine(ref_image=or_ref_im, flo_im = pathlib.Path(input[1]),output_folder = out_file.parent,out_image=output[0])
+
+
 rule linear_coregistration:
     input: "{dirname}/oriented_mask.nii.gz","{dirname}/oriented_image.nii.gz"
     output: "{dirname}/coregistered_head.nii.gz","{dirname}/affine_head.mat"
-    threads: 1
+    threads: 2
     run:
 
-        out_file = pathlib.Path(output[0])
+        out_file = Path(output[0])
 
         ref_mask_1 = REF_IMAGE/"oriented_mask.nii.gz"
         or_ref_im = REF_IMAGE / 'oriented_image.nii.gz'
-
-        lcc = register_flip(input[1],reference_image=or_ref_im,
+        change_orientation(or_ref_im,flo_im_file=Path(input[0]),flo_mask_file=Path(input[1]))
+        register_flip(input[1],reference_image=or_ref_im,
             float_mask=input[0],ref_mask=ref_mask_1,outputs=output)
-        if lcc < -20:
-            change_z_orientation(input[0])
-            change_z_orientation(input[1])
 
-            print(lcc)
-            lcc = register_flip(input[1],reference_image=or_ref_im,
-                float_mask=input[0],
-                ref_mask=ref_mask_1,outputs=output)
-
+#
 
 
 rule non_rigid_registration_rule:
     input: "{dirname}/coregistered_head.nii.gz"
     output: "{dirname}/nonlin_image.nii.gz","{dirname}/nl_transformation_params.txt"
-    threads: 1
+    threads: 2
     run:
         # script coregisters reference image (choosen as default to each linearly registered head for reverse mesh generation
         or_ref_im = REF_IMAGE / 'oriented_image.nii.gz'
         non_rigid_registration(flo_im=str(or_ref_im), ref_im=input[0],
-            out_transform=output[1],out_image=output[0],param_file=str(PARAMETER_FILE))
+            out_transform=output[1],out_image=output[0],param_file=str(PARAMETER_FILE_NONLIN))
 
 
 
@@ -360,7 +507,7 @@ rule non_rigid_registration_rule:
 rule inverse_transform_mesh_rule:
     input: "{dirname}/nl_transformation_params.txt"
     output: "{dirname}/head_affine_registered.obj",
-    threads: 1
+    threads: 2
     run:
         dir1name = str(pathlib.Path(input[0]).parent)
 

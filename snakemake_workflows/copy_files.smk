@@ -1,18 +1,21 @@
 import os.path
-import pathlib
-import re
-from dataclasses import dataclass
-from typing import Dict
+import sys
+from pathlib import Path
 import pickle
+import re
+from configparser import ConfigParser
+from dataclasses import dataclass
+from typing import Union, List, Dict, Tuple
+import tqdm.auto
 import SimpleITK as sitk
-import pathlib
-
 import numpy as np
 import pandas as pd
+from PIL import Image
 
-cohort_list = r"/home/varhai/PRIMUS/data/83_BIOINFORMATICS/Igor/XRY normal skull WT animal.xlsx"
+#cohort_list = r"/home/varhai/PRIMUS/data/83_BIOINFORMATICS/Igor/XRY normal skull WT animal.xlsx"
+cohort_list = r"/home/varhai/PRIMUS/data/83_BIOINFORMATICS/Igor/workdir/sel_ko.csv"
 input_folders = "/home/varhai/PRIMUS/data/83_IMPC_DATA/Bioimaging/SCREENad.Morpho&BodyComp/"
-PROCESS_DIR = pathlib.Path('/home/varhai/PRIMUS/data/83_BIOINFORMATICS/Igor/mouse_skull_workdir')
+PROCESS_DIR = Path('/home/varhai/PRIMUS/data/83_BIOINFORMATICS/Igor/mouse_ablormal')
 
 print(PROCESS_DIR)
 @dataclass
@@ -22,8 +25,8 @@ class MouseDescriptor:
     gender: str
     date: str
     subj_id: str
-    subj_fold: pathlib.Path
-    cohort_fold: pathlib.Path
+    subj_fold: Path
+    cohort_fold: Path
     preprocessed: bool
 
 class Subject:
@@ -33,42 +36,52 @@ class Subject:
         self.cohort = subf['COHORT_ID']
         self.gender = str(subf['GENDER'])
         self.date = subf['DATE']
-        self.scanner = subf['Machine']
+        if 'Machine' in subf.index: # if machine exists
+            self.scanner = subf['Machine']
+        else:
+            self.scanner = 'N/A'
 
 
 dataset : Dict[str, MouseDescriptor] = {}
 
-def has_head(path: pathlib.Path) -> bool:
+def has_head(path: Path,treshold=300) -> bool:
     """
-    return
+    return false if no head or head is small
     :param path: path of folder
     :return: True if folder have been processed
     """
-
-    if len(list(path.glob("**/*__head"))) > 0:
-        return True
+    x = list(path.glob("**/*_head"))
+    if len(x) > 0:
+        head_folder = x[0]
+        if len(list(head_folder.glob("**/*.bmp") )) > treshold:
+            return True
+        else:
+            return False
     return False
 
-
-cohorts = list( pd.read_excel(cohort_list) ['COHORT_ID'])
-cohort_exel = pd.read_excel(cohort_list)
-import tqdm.auto
+if cohort_list.endswith('xslx'):
+    cohorts = list( pd.read_excel(cohort_list) ['COHORT_ID'])
+    cohort_exel = pd.read_excel(cohort_list)
+else:
+    cohorts = list( pd.read_csv(cohort_list) ['COHORT_ID'])
+    cohort_exel = pd.read_csv(cohort_list)
 print("Starting processing files")
 if os.path.exists("processed_files.pkl"):
     f = open("processed_files.pkl","rb")
     dataset = pickle.load(f)
     f.close()
 else:
-    for fold_ in tqdm.tqdm(list(pathlib.Path(input_folders).iterdir())):
-        print(str(fold_))
+    for fold_ in tqdm.tqdm(list(Path(input_folders).iterdir())):
+    #for fold_ in [Path(r"/home/varhai/PRIMUS/data/83_IMPC_DATA/Bioimaging/SCREENad.Morpho&BodyComp/Screen20170925_Klhl5 & Trabd2 & WT(C57Bl-6NCrl)")]:
+        #print(str(fold_))
         if fold_.is_file():
             continue
-        fn_ =fold_.name
+        fn_ =fold_.name.split("_")[0] # First part of fold name
         #print(fn_)
         match = re.search(r'c\d+', fn_)
         if match:
             res = match.group()
-            print(res)
+            #print(res)
             if res in cohorts:
                 indexes = list(cohort_exel[cohort_exel['COHORT_ID'] == res].index)
                 ####generate Descriptors
@@ -78,27 +91,49 @@ else:
                     #get folder with subject
                     #print(cohort_exel.loc[id])
                     #print(fold_)
-                    print("processing cohort " + subj.cohort + " and specimen " + subj.specimen )
+                    #print("processing cohort " + subj.cohort + " and specimen " + subj.specimen )
                     subj_folds = [x for x in folers if x.name.endswith(subj.specimen)]
                     if len(subj_folds) > 0:
                         subj_fold = subj_folds[0]
+                        #print(subj_fold)
                         dataset[subj_fold] = MouseDescriptor(subj.cohort,subj.gender,subj.date,
                                                              subj_fold=subj_fold,cohort_fold=fold_,
                                                              preprocessed=has_head(subj_fold),subj_id=subj.specimen)
-                        print("Found and processed")
-                    if len(subj_folds) > 1:
-                        print(subj_fold)
-            else:
-                print("pattern error? "  + res + " fn " + fn_)
+                        if "Trabd" in subj_fold.name:
+                            print(subj_fold)
+                            print(has_head(subj_fold))
+
+                    #    print("Found and processed")
+                    #if len(subj_folds) > 1:
+                        #print(subj_fold)
+            #else:
+                #print("pattern error? "  + res + " fn " + fn_)
+        else:
+            #print("OLDER COHORT ",fn_)
+            files = list(fold_.iterdir())
+            pattern = re.compile(r".*_.{1}_.*")
+
+            tmp_old_cohorts: List[Tuple[Path, str]] = [(x, x.name) for x in fold_.iterdir()]
+            for old_f, o_name in tmp_old_cohorts:
+                cohort_name = o_name.split("_")[-1]
+                indexes = list(cohort_exel[cohort_exel['SPECIMEN_ID'] == cohort_name].index)
+                #print("id",indexes)
+                if len(indexes) > 0:
+                    index = indexes[0]
+                    subj = Subject(cohort_exel.loc[index])
+                    #print("processing cohort " + subj.cohort + " and specimen " + subj.specimen)
+
+                    dataset[str(old_f)] = MouseDescriptor(subj.cohort,subj.gender,subj.date,
+                        subj_fold=old_f,cohort_fold=fold_,
+                        preprocessed=has_head(old_f),subj_id=subj.specimen)
+                    #print("Found and processed")
+    print(dataset)
     f = open("processed_files.pkl","wb")
     pickle.dump(dataset,f)
     f.close()
-from configparser import ConfigParser
-from typing import Union, List, Dict
-from PIL import Image
-import SimpleITK as sitk
+
 # deve
-def get_subjects(fold : Union[str,pathlib.Path]) -> List[pathlib.Path]:
+def get_subjects(fold : Union[str,Path]) -> List[Path]:
     """
     parse folder and get all mice folders inside
     :param fold: folder with cohort
@@ -106,7 +141,7 @@ def get_subjects(fold : Union[str,pathlib.Path]) -> List[pathlib.Path]:
     """
     i_f = fold
     if isinstance(fold,str):
-        i_f = pathlib.Path(i_f)
+        i_f = Path(i_f)
     res = []
     for file_ in i_f.iterdir():
         if file_.is_file():
@@ -188,7 +223,7 @@ def convert_dataset_to_image(dataset: Dict[int,np.ndarray],image_props:ImageProp
     return res_im
 
 
-def convert_head_folder(fold : Union[str,pathlib.Path]):
+def convert_head_folder(fold : Union[str,Path]):
     """
 
     :param fold: folder with a head
@@ -196,13 +231,16 @@ def convert_head_folder(fold : Union[str,pathlib.Path]):
     """
     i_f = fold
     if isinstance(fold,str):
-        i_f = pathlib.Path(i_f)
+        i_f = Path(i_f)
     #folder already preprocessed
     rec_folder = [ x for x in i_f.iterdir() if x.is_dir() and x.name.endswith("Rec")][0]
 
-    head_folder = list(rec_folder.glob("**/*__head"))[0]
+    head_folder = list(rec_folder.glob("**/*_head"))[0]
 
-    config_file = [x for x in head_folder.iterdir() if x.name.endswith(".log")][0]
+    config_files = [x for x in head_folder.iterdir() if x.name.endswith(".log")]
+    if len(config_files) == 0: # for manual files
+        config_files = [x for x in head_folder.parent.iterdir() if x.name.endswith(".log")]
+    config_file = config_files[0]
     config = ImageProperties(config_file)
 
     #image files
@@ -222,8 +260,17 @@ def convert_head_folder(fold : Union[str,pathlib.Path]):
     #print(config.image_pixel_size)
 
 
-MICE_FOLDERS = {PROCESS_DIR / x.subj_fold.name: x for _,x in dataset.items() if x.preprocessed}
+MICE_FOLDERS = {PROCESS_DIR / x.subj_fold.name: x for _,x
+                in dataset.items()
+                if (x.preprocessed
+                    and not (PROCESS_DIR / x.subj_fold.name/"ct_image_.nii.gz").exists()
 
+                    )}
+
+
+
+#print([(x.subj_fold.name) for _,x in MICE_FOLDERS.items()])
+#sys.exit()
 ### create subfolders
 for fold_ in MICE_FOLDERS.keys():
     fold_.mkdir(exist_ok=True)
@@ -241,8 +288,8 @@ rule convert_images:
     threads: 1
 
     run:
-        inp_file = pathlib.Path(input[0])
-        out_file = pathlib.Path(output[0])
+        inp_file = Path(input[0])
+        out_file = Path(output[0])
         print(output[0])
         print(str(MICE_FOLDERS[inp_file].subj_fold))
         out = convert_head_folder(str(MICE_FOLDERS[inp_file].subj_fold))
