@@ -222,8 +222,9 @@ def register_flip(floating_image: Union[str,pathlib.Path],
         cmd += " -aff " + str(outputs[1]) + " -inaff " + str(inaff)
 
 
+    subprocess.call(cmd)
 
-    shell(cmd)
+    #shell(cmd)
     #return asses_registration_quality(outputs[0],reference_image)
 
 
@@ -245,7 +246,21 @@ def generate_orienter(fixed_image,moving_image):
     registration_method.SetInitialTransform(initial_transform)
     return registration_method
 
+def normalized_cross_correlation(image1, image2):
+    mean1 = np.mean(image1)
+    mean2 = np.mean(image2)
 
+    numerator = np.sum((image1 - mean1) * (image2 - mean2))
+    denominator1 = np.sum((image1 - mean1) ** 2)
+    denominator2 = np.sum((image2 - mean2) ** 2)
+
+    ncc = numerator / (np.sqrt(denominator1 * denominator2))
+    return ncc
+
+def registration_quality( img1, img2):
+    image1 = sitk.ReadImage(img1)
+    image2 = sitk.ReadImage(img2)
+    return normalized_cross_correlation(sitk.GetArrayFromImage(image1),sitk.GetArrayFromImage(image2))
 
 def change_orientation( refim_file, flo_im_file, flo_mask_file=None):
     fixed_image = sitk.ReadImage(refim_file,sitk.sitkFloat32)
@@ -414,6 +429,33 @@ def reflip_image( image_file):
     sitk.WriteImage(moving_image,image_file)
 
 
+def flip_image(im_file_in: str, im_file_out: str, axis:Tuple[int,int,int]):
+    # Load your image (replace 'image_path' with the path to your image)
+    image = sitk.ReadImage(im_file_in)
+
+    # Flip the image along a specific axis (e.g., along the x-axis)
+    # Flip the image along the x-axis
+    #flipped_image = sitk.Flip(image, [True, False, False])  # [X, Y, Z] axis flipping
+    # Specify the axis along which you want to mirror (0 for x-axis, 1 for y-axis, 2 for z-axis)
+    axis_to_mirror = 0  # For example, mirror along the x-axis
+    image_array = sitk.GetArrayFromImage(image)
+    # Flip the image along the specified axis
+    mirrored_image_array = np.flip(image_array, axis=axis#'(1,2)
+    )
+
+    # Create a SimpleITK image from the mirrored NumPy array
+    flipped_image = sitk.GetImageFromArray(mirrored_image_array)
+
+    # Set the origin, spacing, and direction cosine matrix if needed
+    flipped_image.SetOrigin(image.GetOrigin())
+    flipped_image.SetSpacing(image.GetSpacing())
+    flipped_image.SetDirection(image.GetDirection())
+
+    # Apply the flipping transformation to the image
+
+    sitk.WriteImage(flipped_image, im_file_out)
+
+
 rule reorient_mask_and_im:
     input: "{dirname}/bone_coregistration_mask.nii.gz"
     output: "{dirname}/oriented_mask.nii.gz","{dirname}/oriented_image.nii.gz"
@@ -475,18 +517,94 @@ rule whole_head_rigid:
 
 
 rule linear_coregistration:
-    input: "{dirname}/oriented_mask.nii.gz","{dirname}/oriented_image.nii.gz"
+    input: "{dirname}/ct_image_.nii.gz","{dirname}/bone_coregistration_mask.nii.gz"
     output: "{dirname}/coregistered_head.nii.gz","{dirname}/affine_head.mat"
     threads: 2
     run:
-
+        proces_folder = Path(input[0]).parent
         out_file = Path(output[0])
 
         ref_mask_1 = REF_IMAGE/"oriented_mask.nii.gz"
         or_ref_im = REF_IMAGE / 'oriented_image.nii.gz'
-        change_orientation(or_ref_im,flo_im_file=Path(input[0]),flo_mask_file=Path(input[1]))
-        register_flip(input[1],reference_image=or_ref_im,
-            float_mask=input[0],ref_mask=ref_mask_1,outputs=output)
+        #change_orientation(or_ref_im,flo_im_file=Path(input[0]),flo_mask_file=Path(input[1]))
+
+        flip_image(input[0], str(proces_folder / "oriented_1.nii.gz"),axis=(1,2))
+        flip_image(input[1],str(proces_folder / "oriented_m_1.nii.gz"),axis=(1, 2))
+
+        flip_image(input[0], str(proces_folder / "oriented_2.nii.gz"),axis=(0,2))
+        flip_image(input[1],str(proces_folder / "oriented_m_2.nii.gz"),axis=(0, 2))
+
+        flip_image(input[0], str(proces_folder / "oriented_3.nii.gz"),axis=(0,1))
+        flip_image(input[1],str(proces_folder / "oriented_m_3.nii.gz"),axis=(0, 1))
+
+        shell(f"cp -f {input[0]} {str(proces_folder / 'oriented_or.nii.gz')}")
+        shell(f"cp -f {input[1]} {str(proces_folder / 'oriented_m_or.nii.gz')}")
+
+
+        register_flip(str(proces_folder / "oriented_3.nii.gz")
+            ,reference_image=or_ref_im,
+            float_mask=str(proces_folder / "oriented_m_3.nii.gz"),
+            ref_mask=ref_mask_1,
+            outputs=(str(proces_folder / "coreg_3.nii.gz"),str(proces_folder / "coreg_3.mat")))
+
+        register_flip(str(proces_folder / "oriented_2.nii.gz")
+            ,reference_image=or_ref_im,
+            float_mask=str(proces_folder / "oriented_m_2.nii.gz"),
+            ref_mask=ref_mask_1,
+            outputs=(str(proces_folder / "coreg_2.nii.gz"),str(proces_folder / "coreg_2.mat")))
+
+        register_flip(str(proces_folder / "oriented_1.nii.gz")
+            ,reference_image=or_ref_im,
+            float_mask=str(proces_folder / "oriented_m_1.nii.gz"),
+            ref_mask=ref_mask_1,
+            outputs=(str(proces_folder / "coreg_1.nii.gz"),str(proces_folder / "coreg_1.mat")))
+
+        register_flip(str(proces_folder / "oriented_or.nii.gz")
+            ,reference_image=or_ref_im,
+            float_mask=str(proces_folder / "oriented_m_or.nii.gz"),
+            ref_mask=ref_mask_1,
+            outputs=(str(proces_folder / "coreg_or.nii.gz"),str(proces_folder / "coreg_or.mat")))
+        ####check correlation and sort values
+
+
+        subject_test = {}
+
+        if (proces_folder/"coreg_or.nii.gz").exists():
+            subject_test[str(proces_folder / "coreg_or.nii.gz")] = registration_quality(str(proces_folder / "coreg_or.nii.gz"),str(or_ref_im))
+        if (proces_folder/"coreg_1.nii.gz").exists():
+            subject_test[
+                str(proces_folder / "coreg_1.nii.gz")] = registration_quality(str(proces_folder / "coreg_1.nii.gz"),str(or_ref_im))
+        if (proces_folder / "coreg_2.nii.gz").exists():
+            subject_test[
+                str(proces_folder / "coreg_2.nii.gz")] = registration_quality(str(proces_folder / "coreg_2.nii.gz"),str(or_ref_im))
+        if (proces_folder / "coreg_3.nii.gz").exists():
+            subject_test[
+                str(proces_folder / "coreg_3.nii.gz")] = registration_quality(str(proces_folder / "coreg_3.nii.gz"),str(or_ref_im))
+
+        subject_test= list(sorted(subject_test.items(), key=lambda item: item[1], reverse=True))
+        ###### copy to output
+        final_coreg_im = subject_test[0][0]
+
+        name = Path(final_coreg_im).name.split(".")[0]
+
+        shell(f"mv -f {final_coreg_im} {output[0]}")
+        shell(f"mv -f {str(proces_folder/(name + '.mat'))} {output[1]}")
+
+        ## remove temp files
+        name_id = Path(subject_test[0][0]).name.split("_")[1]
+        shell(f"rm -f {str(proces_folder / ('oriented_m_' + name_id + '.nii.gz'))}")
+        shell(f"rm -f {str(proces_folder / ('oriented_' + name_id + '.nii.gz'))}")
+
+        shell(f"rm -rf {str(proces_folder / ('oriented_' ))}*")
+        shell(f"rm -rf {str(proces_folder / ('coreg_'))}*")
+        # for i_sub in range(1,len(subject_test)):
+        #     shell(f"rm -f {subject_test[i_sub][0]}")
+        #     shell(f"rm -f {subject_test[i_sub][0].split('.')[0] + '.mat'}")
+        #     name_id = Path(subject_test[i_sub][0]).name.split("_")[1]
+        #     shell(f"rm -f {str(proces_folder / ('oriented_m_'+ name_id +'.nii.gz'))}")
+        #     shell(f"rm -f {str(proces_folder / ('oriented_'+ name_id +'.nii.gz'))}")
+
+
 
 #
 
