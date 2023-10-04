@@ -1,19 +1,13 @@
 import os
 import pathlib
 import subprocess
+from pathlib import Path
 from typing import Union, Tuple
 
-import scipy
-import vtk
 import SimpleITK as sitk
-from pathlib import Path
-import itk
-from scipy.ndimage.measurements import center_of_mass
 import numpy as np
-from scipy.interpolate import interpn
-from vtkmodules.util import numpy_support
-
-
+import vtk
+import shlex
 
 PROCESS_DIR = Path(config['process_dir'])
 print(PROCESS_DIR)
@@ -222,7 +216,7 @@ def register_flip(floating_image: Union[str,pathlib.Path],
         cmd += " -aff " + str(outputs[1]) + " -inaff " + str(inaff)
 
 
-    subprocess.call(cmd)
+    subprocess.call(shlex.split(cmd))
 
     #shell(cmd)
     #return asses_registration_quality(outputs[0],reference_image)
@@ -274,29 +268,6 @@ def change_orientation( refim_file, flo_im_file, flo_mask_file=None):
 
     final_transform = registration_method.Execute(fixed_image,moving_image)
 
-    # final_metric1 = registration_method.GetMetricValue()
-    # print("fir ",final_metric1)
-    #
-    # ### flip image
-    #
-    # direction = np.reshape(moving_image.GetDirection(),(3,3))
-    # direction[:,2] = direction[:,2] * -1
-    # direction[:, 0] = direction[:, 0] * -1
-    # moving_image.SetDirection(list(np.reshape(direction,-1)))
-    # #
-    # registration_method = generate_orienter(fixed_image,moving_image)
-    # final_transform2 = registration_method.Execute(fixed_image,moving_image)
-    # final_metric2 = registration_method.GetMetricValue()
-    # print("sec ",final_metric2 )
-    # if final_metric2 < final_metric1:
-    #
-    #     # reflip_image(flo_im_file)
-    #     # reflip_image(flo_mask_file)
-    #     final_transform = final_transform2
-    #
-    #
-    # else:
-    #     moving_image = sitk.ReadImage(flo_im_file,sitk.sitkFloat32)
 
 
     # im  resample
