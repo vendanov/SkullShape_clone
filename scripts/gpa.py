@@ -1,21 +1,24 @@
 import pickle
 from typing import Dict
-
 import scipy.spatial as sp
 import numpy as np
 from tqdm.auto import tqdm
 #from concurrent.futures import ProcessPoolExecutor
-
+from procrustes import generic
 
 
 def procreustes_alignment(reference_mesh, compute_mesh):
     #("STARTED")
-    matx1,mesh_aligned, translation = sp.procrustes(reference_mesh, compute_mesh)
+    if not isinstance(reference_mesh,np.ndarray):
+        reference_mesh = np.array(reference_mesh)
+    if not isinstance(compute_mesh,np.ndarray):
+        compute_mesh = np.array(compute_mesh)
 
-    return mesh_aligned
+    procr_result = generic(a=compute_mesh,b=reference_mesh)
+    return procr_result.new_a, procr_result.error
 
 
-def gpa(meshes: Dict[str, np.ndarray], max_iterations=4, threshold=1e-6):
+def gpa(meshes: Dict[str, np.ndarray], max_iterations=100, threshold=1e-14):
     num_meshes = len(meshes)
     num_vertices = len(list(meshes.values())[0])
 
@@ -39,13 +42,14 @@ def gpa(meshes: Dict[str, np.ndarray], max_iterations=4, threshold=1e-6):
         #     aligned_meshes.append( f.result() )
 
         for mesh in tqdm(stacked_meshes[1:]):
-            aligned_meshes.append(procreustes_alignment(reference_mesh, mesh))
+            tmp,_ = procreustes_alignment(reference_mesh, mesh)
+            aligned_meshes.append(tmp)
         # Step 2: Compute the mean shape of the current set of superimposed shapes
         mean_mesh = np.mean(np.stack(aligned_meshes), axis=0)
         # print("mean mesh shape", mean_mesh.shape)
         # Step 3: Check for convergence based on Procrustes distance
-        _, _, procrustes_distance = sp.procrustes(reference_mesh, mean_mesh)
-        print("procrustes distance ", procrustes_distance)
+        _,procrustes_distance = procreustes_alignment(reference_mesh, mean_mesh)
+        print("Procrustes distance ", procrustes_distance)
         if procrustes_distance < threshold:
             finishing_iteration = iteration
             break
@@ -56,7 +60,7 @@ def gpa(meshes: Dict[str, np.ndarray], max_iterations=4, threshold=1e-6):
     result_shapes = {}
     for key, shape in tqdm(meshes.items()):
         #print(shape.shape)
-        result = procreustes_alignment(reference_mesh=reference_mesh, compute_mesh=shape)
+        result,_ = procreustes_alignment(reference_mesh=reference_mesh, compute_mesh=shape)
         result_shapes[key] = result
 
     return reference_mesh, aligned_meshes, result_shapes
