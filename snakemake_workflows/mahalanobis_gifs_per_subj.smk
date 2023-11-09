@@ -5,13 +5,21 @@ import subprocess
 import time
 from pathlib import Path
 from typing import List, Dict
+
+import matplotlib
 import vtk
 import numpy as np
-
+import matplotlib.pyplot as plt
+import matplotlib.animation as animation
+from matplotlib import cm
+from matplotlib.colors import ListedColormap
+from mpl_toolkits.mplot3d import Axes3D
+import matplotlib
 import scipy.io as scio
 from tqdm.auto import tqdm
 import scipy.spatial as sp
 import sys
+print(__file__)
 sys.path.append('..' + os.sep + 'scripts')
 from gpa import gpa
 from vtk_helper import center_of_mesh
@@ -22,30 +30,28 @@ REF_IMAGE = Path('/home/varhai/PRIMUS/data/83_BIOINFORMATICS/Igor/reference_imag
 
 ref_im = REF_IMAGE / 'ct_image_.nii.gz'
 ref_mask = REF_IMAGE / 'bone_coregistration_mask.nii.gz'
-
+MALE_FACE_PERC = r"/home/varhai/PRIMUS/data/83_BIOINFORMATICS/Igor/workdir/wt_male_f_percentiles.mat"
+FEMALE_FACE_PERC = r"/home/varhai/PRIMUS/data/83_BIOINFORMATICS/Igor/workdir/wt_female_f_percentiles.mat"
+coh_file  = r"/home/varhai/PRIMUS/data/83_BIOINFORMATICS/Igor/workdir/wt_cohorts_pts.pkl"
 
 MALE_FACE_PERC = r"\\primus.img.cas.cz\data\83_BIOINFORMATICS\Igor\workdir\wt_male_f_percentiles.mat"
 FEMALE_FACE_PERC = r"\\primus.img.cas.cz\data\83_BIOINFORMATICS\Igor\workdir\wt_female_f_percentiles.mat"
 coh_file  = r"C:\Users\Public\wt_cohorts_pts.pkl"
-coh_file_l = open(coh_file,'rb')
-COHORTS = pickle.load(coh_file_l)
-coh_file_l.close()
-print("FILE READ")
+
+
+
+def read_coh_file():
+    coh_file_l = open(coh_file,'rb')
+    COHORTS = pickle.load(coh_file_l)
+
+    coh_file_l.close()
+    return COHORTS
+    print("FILE READ")
 
 MICE_FOLDERS = [x for x in PROCESS_DIR.iterdir() if (x.is_dir() #and "Trab" in x.name
-                and (x/ "head_affine_registered.obj").exists())]
+                and (x / "head_affine_registered.obj").exists())]
 print("START BUILD")
 from sklearn.covariance import EmpiricalCovariance,MinCovDet
-
-
-def procreustes_alignment(reference_mesh, compute_mesh):
-    #("STARTED")
-    matx1, mesh_aligned, translation = sp.procrustes(reference_mesh,compute_mesh)
-
-    return mesh_aligned
-
-
-
 
 
 def single_to_many(mesh_pts: np.ndarray, cohort: List[np.ndarray]):
@@ -71,7 +77,7 @@ def single_to_many(mesh_pts: np.ndarray, cohort: List[np.ndarray]):
 
     return dists
 
-def read_mesh_and_points ( obj_filename ):
+def read_mesh_and_points( obj_filename ):
     reader = vtk.vtkOBJReader()
     reader.SetFileName(obj_filename)
     reader.Update()
@@ -83,22 +89,98 @@ def read_mesh_and_points ( obj_filename ):
         pt = points.GetPoint(i)
         res_mesh.append(pt)
 
-    return np.array(res_mesh), mesh
+    polygons = mesh.GetPolys()
+    faces = []
+    # Iterate over the polygons to extract the faces
+    polygons.InitTraversal()
+    while True:
+        faceIds = vtk.vtkIdList()
+        if polygons.GetNextCell(faceIds):
+            face = [faceIds.GetId(i) for i in range(faceIds.GetNumberOfIds())]
+            faces.append(face)
+        else:
+            break
+
+    return np.array(res_mesh), faces, mesh
+
+
+
+def create_mah_gif(input_mat_file, input_obj_file, output_gif_file):
+    # Load the energies
+
+    energies = scio.loadmat(input_mat_file)['energies']
+    energies[np.where(energies > 100)] = 100
+    energies = energies[0]
+    print(energies[0])
+    # Load the mesh
+    pts,faces,mesh = read_mesh_and_points(input_obj_file)
+
+    # Create a figure
+    fig = plt.figure(figsize=(8, 6), dpi=400)
+    ax = fig.add_subplot(111, projection='3d')
+
+    # Set the colormap (adjust as desired)
+    norm = matplotlib.colors.Normalize(0, 100)
+    m = cm.ScalarMappable(cmap=plt.cm.get_cmap('jet'),norm=norm)
+    m.set_array([])
+    print((norm(energies)))
+    plt.colorbar(m)
+    cmap = plt.get_cmap('jet')
+    norm = plt.Normalize(0, 100)
+    cmap = plt.get_cmap('viridis')
+    p3dc= ax.plot_trisurf(pts[:, 0],pts[:, 1],pts[:, 2],
+        triangles=faces,linewidth=0.2  #,)
+    )
+    p3dc.set_fc(cmap(norm(energies)))
+    plt.savefig(output_gif_file.split(".")[0] + ".png")
+    # Create the animation function
+    def animate(frame):
+        ax.clear()
+        ax.set_box_aspect([1, 1, 1])
+        p3dc = ax.plot_trisurf(pts[:, 0], pts[:, 1], pts[:, 2],
+                        triangles=faces,linewidth=4)#,)
+
+        p3dc.set_fc(cmap(norm(energies)))
+        p3dc.set_lw(10)
+        # ax.plot_trisurf(pts[:, 0], pts[:, 1], pts[:, 2],
+        #                 triangles=faces,linewidth=0.2, cmap=cmap, norm=norm,
+        #                 facecolors=cmap(norm(energies))
+        # )
+        ax.set_xlabel('X')
+        ax.set_ylabel('Y')
+        ax.set_zlabel('Z')
+        ax.set_title(f'Frame {frame + 1}')
+
+        # Rotate the view
+        ax.view_init(elev=20,azim=frame * 36)  # Adjust the rotation speed (36 degrees per frame)
+
+    # Number of frames in the GIF
+    num_frames = 10
+
+    # Create the animation
+    ani = animation.FuncAnimation(fig, animate, frames=num_frames)
+
+    # Save the animation as a GIF
+    ani.save(output_gif_file, writer='pillow',fps=1 )
+
+    plt.close(fig)
+    print('GIF saved successfully.')
 
 rule all:
     input:
-        expand("{dirname}/mahalanobis.gif",dirname=MICE_FOLDERS),
-        expand("{dirname}/percentile.gif", dirname=MICE_FOLDERS)
+        expand("{dirname}/mahalanobis.gif",dirname=MICE_FOLDERS)
+#        ,expand("{dirname}/percentile.gif", dirname=MICE_FOLDERS)
 
 rule compute_mahalanobis_heads:
     input: "{dirname}/head_affine_registered.obj"
     output: "{dirname}/mahalanobis.mat"
     threads: 1
     run:
+        COHORTS = read_coh_file()
         par_name = Path(input[0]).parent.name
         cohort = copy.copy(COHORTS[par_name.split("_")[1]]) # copy males or females
 
-        mesh_pts, mesh = read_mesh_and_points(input[0])
+        mesh_pts,faces, mesh = read_mesh_and_points(input[0])
 
 
         com = center_of_mesh(mesh)
@@ -113,17 +195,6 @@ rule compute_mahalanobis_heads:
 
         # analyse distances
 
-        polygons = mesh.GetPolys()
-        faces = []
-        # Iterate over the polygons to extract the faces
-        polygons.InitTraversal()
-        while True:
-            faceIds = vtk.vtkIdList()
-            if polygons.GetNextCell(faceIds):
-                face = [faceIds.GetId(i) for i in range(faceIds.GetNumberOfIds())]
-                faces.append(face)
-            else:
-                break
 
         ### compute colors and write to mat
         energies = []
@@ -136,20 +207,38 @@ rule compute_mahalanobis_heads:
         scio.savemat(output[0],{"energies": energies})
 
 
-rule compute_mahalanobis_gif:
+# rule compute_mahalanobis_gif:
+#     input: "{dirname}/mahalanobis.mat", "{dirname}/head_affine_registered.obj"
+#     output: "{dirname}/mahalanobis.gif"
+#     threads: 1
+#     run:
+#
+#         create_mah_gif(input_mat_file=input[0],input_obj_file=input[1],output_gif_file=output[0])
+#
+rule compute_mahalanobis_fig:
     input: "{dirname}/mahalanobis.mat", "{dirname}/head_affine_registered.obj"
+    output: "{dirname}/mahalanobis.fig"
+    threads: 1
+    run:
+        MAT_PATH = r"C:\Users\h492884\PycharmProjects\mouseSkull\matlab"
+        cmd= r""
+        cmd += f'matlab -nosplash -noFigureWindows -sd {MAT_PATH} -batch "create_mah_fig('
+        cmd+= f"'{input[0]}', '{input[1]}', '{output[0]}'); exit;" + '"'
+        print(cmd)
+        subprocess.call(cmd)
+
+rule compute_mahalanobis_gif:
+    input: "{dirname}/mahalanobis.fig"
     output: "{dirname}/mahalanobis.gif"
     threads: 1
     run:
         MAT_PATH = r"C:\Users\h492884\PycharmProjects\mouseSkull\matlab"
         cmd= r""
-        cmd += f'matlab -nosplash -noFigureWindows -sd {MAT_PATH} -batch "create_mah_gif('
-        cmd+= f"'{input[0]}', '{input[1]}', '{output[0]}'); exit;" + '"'
+        cmd += f'matlab -nosplash -noFigureWindows -sd {MAT_PATH} -batch "fig_2_gif('
+        cmd+= f"'{input[0]}', '{output[0]}'); exit;" + '"'
 
         print(cmd)
-        #shell(cmd)
         subprocess.call(cmd)
-        #time.sleep(50)
 
 rule compute_percentile_gif:
     input: "{dirname}/mahalanobis.mat", "{dirname}/head_affine_registered.obj"

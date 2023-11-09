@@ -12,8 +12,11 @@ import numpy as np
 import pandas as pd
 from PIL import Image
 
+
+
+cohort_list = (config['cohort_csv'])
 #cohort_list = r"/home/varhai/PRIMUS/data/83_BIOINFORMATICS/Igor/XRY normal skull WT animal.xlsx"
-cohort_list = r"/home/varhai/PRIMUS/data/83_BIOINFORMATICS/Igor/workdir/sel_ko.csv"
+#cohort_list = r"/home/varhai/PRIMUS/data/83_BIOINFORMATICS/Igor/workdir/sel_ko.csv"
 input_folders = "/home/varhai/PRIMUS/data/83_IMPC_DATA/Bioimaging/SCREENad.Morpho&BodyComp/"
 PROCESS_DIR = Path('/home/varhai/PRIMUS/data/83_BIOINFORMATICS/Igor/mouse_ablormal')
 
@@ -259,7 +262,7 @@ def convert_head_folder(fold : Union[str,Path]):
     #for
     #print(config.image_pixel_size)
 
-
+print(dataset)
 MICE_FOLDERS = {PROCESS_DIR / x.subj_fold.name: x for _,x
                 in dataset.items()
                 if (x.preprocessed

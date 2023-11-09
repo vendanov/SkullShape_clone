@@ -1,17 +1,7 @@
-function create_mah_gif(input_mat_file, input_obj_file, output_gif_file)
+function fig_2_gif(input_fig_file, output_gif_file)
     % Load the energies
-    load(input_mat_file);
-    energies = transpose(energies);
-    energies(energies > 100) = 100;
-    % Load the mesh
-    mesh = readObj(input_obj_file);
-    % ... rest of your code ...
-    fig = figure;
-    trisurf(mesh.f.v, mesh.v(:, 1), mesh.v(:, 2), mesh.v(:, 3), 'facevertexcdata', energies );
-    colormap('jet');  % Set the colormap (adjust as desired)
-    colorbar;         % Display the colorbar
-    axis equal;
-
+    fig=openfig(input_fig_file);
+    %exportgraphics(fig, output_gif_file);
 
     % Rotate and save frames
     num_frames = 10; % Number of frames in the GIF
@@ -29,18 +19,19 @@ function create_mah_gif(input_mat_file, input_obj_file, output_gif_file)
 
         % Convert the captured frame to an RGB image
         [imind, cm] = rgb2ind(frames{frame_idx}.cdata, 256);
-
+        pause(1);
         % Write the image to the GIF file
         if frame_idx == 1
             imwrite(imind, cm, output_gif_file, 'gif', 'LoopCount', Inf, 'DelayTime', 1);
         else
             imwrite(imind, cm, output_gif_file, 'gif', 'WriteMode', 'append', 'DelayTime', 1);
         end
+        %exportgraphics(fig, output_gif_file,Append=true);
     end
 
 
     % Close the figure
-    close(fig);
+    %close(fig);
 
     disp('GIF saved successfully.');
 end

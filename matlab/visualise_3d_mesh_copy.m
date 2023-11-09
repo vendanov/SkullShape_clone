@@ -1,4 +1,4 @@
-function create_gif_from_mesh(input_mat_file, input_obj_file, output_gif_file)
+function visualise_3d_mesh_copy(input_mat_file, input_obj_file, output_gif_file)
     % Load the energies
     load(input_mat_file);
     energies = transpose(energies);

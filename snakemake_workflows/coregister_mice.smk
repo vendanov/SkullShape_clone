@@ -5,12 +5,17 @@ from pathlib import Path
 from typing import Union, Tuple
 
 import SimpleITK as sitk
+import fsl.transform.flirt
 import numpy as np
 import vtk
 import shlex
+import sys
 
+sys.path.append('..' + os.sep + 'scripts')
+from gpa import *
+from vtk_helper import *
 PROCESS_DIR = Path(config['process_dir'])
-print(PROCESS_DIR)
+#print(PROCESS_DIR)
 #pathlib.Path('/home/varhai/PRIMUS/data/83_BIOINFORMATICS/Igor/mouse_skull_workdir')
 REF_IMAGE = pathlib.Path('/home/varhai/PRIMUS/data/83_BIOINFORMATICS/Igor/reference_image/')
 PARAMETER_FILE_NONLIN = pathlib.Path("/home/varhai/PRIMUS/data/83_BIOINFORMATICS/Igor/workdir/Parameters_Stable_NL.txt")
@@ -374,7 +379,7 @@ def replace_points_in_mesh(out_name: str, mesh_ref_space: str,
 
 rule all:
     input:
-        expand("{dirname}/head_affine_registered.obj",dirname=MICE_FOLDERS)
+        expand("{dirname}/result_affine.mat" ,dirname=MICE_FOLDERS)
 
 
 rule otsu_threshold:
@@ -614,6 +619,47 @@ rule inverse_transform_mesh_rule:
         shell(cmd)
         shell("rm -rf " + def_field_file )
 
+import fsl.data.image as flim
+
+def read_and_convert_flirt(matrix_file, reference_image,floating_image):
+    """
+
+    :param matrix_file: matrix txt
+    :param reference_image: reference image file
+    :param floating_image: floating image file
+    :return:
+    """
+    flirt_mat = fsl.transform.flirt.readFlirt(matrix_file)
+    ref_im = flim.Image(reference_image)
+    flo_im = flim.Image(floating_image)
+
+    return fsl.transform.flirt.fromFlirt(flirt_mat,flo_im,ref_im,'world','world')
+
+
+
+
+rule procrustes:
+    input: "{dirname}/head_affine_registered.obj","{dirname}/affine_head.mat", "{dirname}/ct_image_.nii.gz"
+    output: "{dirname}/result_affine.mat",
+    threads: 1
+    run:
+        or_ref_ = REF_IMAGE / "oriented_mesh.obj"
+        read_orig_mesh = read_vtk_obj(str(or_ref_))
+        ref_mesh_pts= get_mesh_vertices(read_orig_mesh) - np.array(center_of_mesh(read_orig_mesh))
+        input_mesh = read_vtk_obj(input[0])
+        input_mesh_pts= get_mesh_vertices(input_mesh) - np.array(center_of_mesh(input_mesh))
+
+        _,_,matrix = procreustes_alignment(ref_mesh_pts,input_mesh_pts)
+
+        or_ref_im = REF_IMAGE / "oriented_image.nii.gz"
+        print("outmat",matrix)
+        prev_mat = read_and_convert_flirt(input[1],reference_image=or_ref_im,floating_image=input[2])
+        prev_mat = prev_mat[:3,:3]
+
+        print(prev_mat)
+        out_mat = np.dot(   prev_mat, matrix )
+
+        np.savetxt(output[0],out_mat)
 
 
 
