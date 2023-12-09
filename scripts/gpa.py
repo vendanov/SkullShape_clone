@@ -48,7 +48,7 @@ def gpa(meshes: Dict[str, np.ndarray], max_iterations=100, threshold=1e-14):
         mean_mesh = np.mean(np.stack(aligned_meshes), axis=0)
         # print("mean mesh shape", mean_mesh.shape)
         # Step 3: Check for convergence based on Procrustes distance
-        _,procrustes_distance = procreustes_alignment(reference_mesh, mean_mesh)
+        _,procrustes_distance,_= procreustes_alignment(reference_mesh, mean_mesh)
         print("Procrustes distance ", procrustes_distance)
         if procrustes_distance < threshold:
             finishing_iteration = iteration
