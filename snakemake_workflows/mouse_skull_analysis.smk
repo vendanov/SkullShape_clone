@@ -502,11 +502,14 @@ def read_coh_file():
     return COHORTS
     print("FILE READ")
 
+
+
 rule general_procrustes:
-    input: (OUT_FOLD/"{subject}/5_mah_mat.flag")
+    input: (OUT_FOLD/"{subject}/6_analyse_scalling.flag")
     output: (OUT_FOLD/"{subject}/6_procr_result.flag")
     params:
         in_ct = lambda wildcards: OUT_FOLD / f"{wildcards.subject}/mahalanobis.mat",
+        in_matr = lambda wildcards: OUT_FOLD/ f"{wildcards.subject}/result_head.mat",
         head = lambda wildcards: OUT_FOLD / f"{wildcards.subject}/head_affine_registered.obj",
         out_file = lambda wildcards: OUT_FOLD / f"{wildcards.subject}/abnormality_automated.csv",
     run:
@@ -532,9 +535,13 @@ rule general_procrustes:
             energies =  scio.loadmat(str(params.in_ct))['energies']
             ratio = (energies > perc99).sum() / perc99.shape[1]
 
-            array = {"Procrustes Distance": distance,
-                     "abnormal shape computer": "normal" if distance<980 else "abnormal",
-                     "ratio of 99%" : ratio}
+            ##
+            mat = np.loadtxt(params.in_matr)
+            u,s,v = np.linalg.svd(mat)
+
+            array = {"proc_dist": distance,
+                     "abn_distance": "normal" if distance<980 else "abnormal",
+                     "area99perc" : ratio, "abn_perc" : "normal" if ratio<0.1 else "abnormal","s_x": s[0],"s_y": s[1],"s_z":s[2]}
             df = pd.Series(array)
             df.to_csv(params.out_file)
 
@@ -560,9 +567,10 @@ rule combine_results:
                 #subject[0] = float(subject[0])
                 res.append(subject)
             else:
-                res.append([None,None,None])
+                res.append([None,None,None,None,None,None,None])
         print(res)
-        pd.DataFrame(res,index=index,columns=["Procrustes Distance","abnormal shape computer","percentage of 99%"]).to_csv(output[0])
+        pd.DataFrame(res,index=index,columns=["proc_dist","abn_distance",
+                                              "area99perc", "abn_perc","s_x","s_y","s_z"]).to_csv(output[0])
 
 def read_mesh_and_points( obj_filename ):
     reader = vtk.vtkOBJReader()
@@ -835,7 +843,40 @@ rule mah_gifs:
                 input_obj_file=params.head,
                 output_gif_file=str(params.out_mah_file),title=Path(input[0]).parent.name)
             
-            
+
+rule result_rotation_scalling:
+    input: OUT_FOLD/"{subject}/5_mah_mat.flag"
+    output: (OUT_FOLD/"{subject}/6_analyse_scalling.flag")
+    params:
+        in_mat1 = lambda wildcards: OUT_FOLD / f"{wildcards.subject}/mahalanobis.mat",
+        head = lambda wildcards: OUT_FOLD / f"{wildcards.subject}/head_affine_registered.obj",
+        in_mat = lambda wildcards: OUT_FOLD / f"{wildcards.subject}/affine_head.mat",
+        out_mat = lambda wildcards: OUT_FOLD / f"{wildcards.subject}/result_head.mat"
+    threads: 1
+    run:
+        Path(output[0]).touch(exist_ok=True)
+        if Path(params.in_mat).exists():
+            or_ref_ = REF_IMAGE / "oriented_mesh.obj"
+            read_orig_mesh = read_vtk_obj(str(or_ref_))
+            ref_mesh_pts= get_mesh_vertices(read_orig_mesh) - np.array(center_of_mesh(read_orig_mesh))
+            input_mesh = read_vtk_obj(params.head)
+            input_mesh_pts= get_mesh_vertices(input_mesh) - np.array(center_of_mesh(input_mesh))
+
+            _,_,matrix = procreustes_alignment(ref_mesh_pts,input_mesh_pts)
+
+            or_ref_im = REF_IMAGE / "oriented_image.nii.gz"
+            print("outmat",matrix)
+            prev_mat = np.loadtxt(params.in_mat)
+            prev_mat = prev_mat[:3,:3]
+
+            print(prev_mat)
+            out_mat = np.dot( matrix, prev_mat)
+
+            np.savetxt(params.out_mat,out_mat)
+
+
+
+
             
 def analyse_dirs_logs(folder: Union[str,Path]):
     text = " "
