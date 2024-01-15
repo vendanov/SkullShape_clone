@@ -25,6 +25,9 @@ ref_mask = REF_IMAGE / 'bone_coregistration_mask.nii.gz'
 MESH_TRANSFORM_SCRIPT = "/home/varhai/PRIMUS/data/83_BIOINFORMATICS/Igor/scripts/support/convert_mesh.py"
 SLICER_CORE = "/home/varhai/Slicer-5.2.2-linux-amd64/Slicer"
 
+MALE_FACE_PERC = r"/home/varhai/PRIMUS/data/83_BIOINFORMATICS/Igor/workdir/wt_male_f_percentiles.mat"
+FEMALE_FACE_PERC = r"/home/varhai/PRIMUS/data/83_BIOINFORMATICS/Igor/workdir/wt_female_f_percentiles.mat"
+coh_file  = r"/home/varhai/PRIMUS/data/83_BIOINFORMATICS/Igor/workdir/wt_cohorts_pts.pkl"
 
 MICE_FOLDERS = [x for x in PROCESS_DIR.iterdir() if x.is_dir() and len(list(x.iterdir()))>0 ]
 
@@ -79,7 +82,11 @@ def reorient_normal_image(image_orig :sitk.Image,label_orig:sitk.Image):
 
     image_result = sitk.Image(image_orig)
     direction = label_shape_filter.GetOrientedBoundingBoxDirection(1)
+    direction = np.reshape(direction,(3,3))
 
+    direction[:,0] = -1 * direction[:,0]
+    print(direction.reshape(-1))
+    image_result.SetDirection(direction.reshape(-1).tolist())
     # if get_frontal_voxels(label_orig) > get_frontal_voxels(label_orig,False):
     #     print(True)
     # return
@@ -286,7 +293,6 @@ def change_orientation( refim_file, flo_im_file, flo_mask_file=None):
         sitk.WriteImage(moving_resampled,flo_mask_file)
 
 
-
 # def non_rigid_registration(flo_im: str, ref_im: strcd
 #                            , out_transform:str, out_image: str):
 #
@@ -301,8 +307,6 @@ def non_rigid_registration(flo_im: str, ref_im: str, out_transform: str, out_ima
     shell(cmd)
     shell(f"mv -f {str(fold/ 'result.0.nii.gz')} {out_image}")
     shell(f"mv -f {str(fold/ 'TransformParameters.0.txt')} {out_transform}")
-
-
 
 
 def transform_mesh_points(mesh_points, transform):
@@ -408,7 +412,6 @@ def reflip_image( image_file):
 def flip_image(im_file_in: str, im_file_out: str, axis:Tuple[int,int,int]):
     # Load your image (replace 'image_path' with the path to your image)
     image = sitk.ReadImage(im_file_in)
-
     # Flip the image along a specific axis (e.g., along the x-axis)
     # Flip the image along the x-axis
     #flipped_image = sitk.Flip(image, [True, False, False])  # [X, Y, Z] axis flipping
@@ -437,24 +440,23 @@ rule reorient_mask_and_im:
     output: "{dirname}/oriented_mask.nii.gz","{dirname}/oriented_image.nii.gz"
     threads: 1
     run:
-
         mask = pathlib.Path(input[0])
         flo_im = mask.parent / "ct_image_.nii.gz"
 
         mask_im = sitk.ReadImage(mask)
         or_ref_im = REF_IMAGE / "oriented_image.nii.gz"
 
-        shell(f"cp -f {str(flo_im)} {output[1]}")
-        shell(f"cp -f {input[0]} {output[0]}")
-        change_orientation(or_ref_im,flo_im_file=output[1],flo_mask_file=Path(output[0]))
+        # shell(f"cp -f {str(flo_im)} {output[1]}")
+        # shell(f"cp -f {input[0]} {output[0]}")
+        # change_orientation(or_ref_im,flo_im_file=output[1],flo_mask_file=Path(output[0]))
 
 
-        ## reorient main image
-        #image1_res = reorient_normal_image(sitk.ReadImage(flo_im),mask_im)
-        #sitk.WriteImage(image1_res,output[1])
-        ###reorient mask
-        #image1_res = reorient_normal_image(mask_im,mask_im)
-        #sitk.WriteImage(image1_res,output[0])
+        # reorient main image
+        image1_res = reorient_normal_image(sitk.ReadImage(flo_im),mask_im)
+        sitk.WriteImage(image1_res,output[1])
+        ##reorient mask
+        image1_res = reorient_normal_image(mask_im,mask_im)
+        sitk.WriteImage(image1_res,output[0])
         #shell(cmd)
 
 

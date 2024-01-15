@@ -34,9 +34,9 @@ MALE_FACE_PERC = r"/home/varhai/PRIMUS/data/83_BIOINFORMATICS/Igor/workdir/wt_ma
 FEMALE_FACE_PERC = r"/home/varhai/PRIMUS/data/83_BIOINFORMATICS/Igor/workdir/wt_female_f_percentiles.mat"
 coh_file  = r"/home/varhai/PRIMUS/data/83_BIOINFORMATICS/Igor/workdir/wt_cohorts_pts.pkl"
 
-MALE_FACE_PERC = r"\\primus.img.cas.cz\data\83_BIOINFORMATICS\Igor\workdir\wt_male_f_percentiles.mat"
-FEMALE_FACE_PERC = r"\\primus.img.cas.cz\data\83_BIOINFORMATICS\Igor\workdir\wt_female_f_percentiles.mat"
-coh_file  = r"C:\Users\Public\wt_cohorts_pts.pkl"
+# MALE_FACE_PERC = r"\\primus.img.cas.cz\data\83_BIOINFORMATICS\Igor\workdir\wt_male_f_percentiles.mat"
+# FEMALE_FACE_PERC = r"\\primus.img.cas.cz\data\83_BIOINFORMATICS\Igor\workdir\wt_female_f_percentiles.mat"
+# coh_file  = r"C:\Users\Public\wt_cohorts_pts.pkl"
 
 
 
@@ -107,7 +107,7 @@ def read_mesh_and_points( obj_filename ):
 
 def create_mah_gif(input_mat_file, input_obj_file, output_gif_file):
     # Load the energies
-
+    cmp_str = 'jet'
     energies = scio.loadmat(input_mat_file)['energies']
     energies[np.where(energies > 100)] = 100
     energies = energies[0]
@@ -119,24 +119,29 @@ def create_mah_gif(input_mat_file, input_obj_file, output_gif_file):
     fig = plt.figure(figsize=(8, 6), dpi=400)
     ax = fig.add_subplot(111, projection='3d')
 
+
     # Set the colormap (adjust as desired)
     norm = matplotlib.colors.Normalize(0, 100)
-    m = cm.ScalarMappable(cmap=plt.cm.get_cmap('jet'),norm=norm)
+    m = cm.ScalarMappable(cmap=plt.cm.get_cmap(cmp_str),norm=norm)
     m.set_array([])
     print((norm(energies)))
     plt.colorbar(m)
-    cmap = plt.get_cmap('jet')
+
+    cmap = plt.get_cmap(cmp_str)
     norm = plt.Normalize(0, 100)
-    cmap = plt.get_cmap('viridis')
+    cmap = plt.get_cmap(cmp_str)
     p3dc= ax.plot_trisurf(pts[:, 0],pts[:, 1],pts[:, 2],
         triangles=faces,linewidth=0.2  #,)
     )
+    ax.set_box_aspect([np.ptp(i) for i in [ax.get_xlim(), ax.get_ylim(), ax.get_zlim()]])
     p3dc.set_fc(cmap(norm(energies)))
+    #ax.set_autoscale_on(False)
     plt.savefig(output_gif_file.split(".")[0] + ".png")
     # Create the animation function
     def animate(frame):
-        ax.clear()
-        ax.set_box_aspect([1, 1, 1])
+        #ax.clear()
+        #ax.set_box_aspect([1, 1, 1])
+        ax.set_box_aspect([np.ptp(i) for i in [ax.get_xlim(), ax.get_ylim(), ax.get_zlim()]])
         p3dc = ax.plot_trisurf(pts[:, 0], pts[:, 1], pts[:, 2],
                         triangles=faces,linewidth=4)#,)
 
@@ -207,38 +212,38 @@ rule compute_mahalanobis_heads:
         scio.savemat(output[0],{"energies": energies})
 
 
-# rule compute_mahalanobis_gif:
-#     input: "{dirname}/mahalanobis.mat", "{dirname}/head_affine_registered.obj"
-#     output: "{dirname}/mahalanobis.gif"
-#     threads: 1
-#     run:
-#
-#         create_mah_gif(input_mat_file=input[0],input_obj_file=input[1],output_gif_file=output[0])
-#
-rule compute_mahalanobis_fig:
-    input: "{dirname}/mahalanobis.mat", "{dirname}/head_affine_registered.obj"
-    output: "{dirname}/mahalanobis.fig"
-    threads: 1
-    run:
-        MAT_PATH = r"C:\Users\h492884\PycharmProjects\mouseSkull\matlab"
-        cmd= r""
-        cmd += f'matlab -nosplash -noFigureWindows -sd {MAT_PATH} -batch "create_mah_fig('
-        cmd+= f"'{input[0]}', '{input[1]}', '{output[0]}'); exit;" + '"'
-        print(cmd)
-        subprocess.call(cmd)
-
 rule compute_mahalanobis_gif:
-    input: "{dirname}/mahalanobis.fig"
+    input: "{dirname}/mahalanobis.mat", "{dirname}/head_affine_registered.obj"
     output: "{dirname}/mahalanobis.gif"
     threads: 1
     run:
-        MAT_PATH = r"C:\Users\h492884\PycharmProjects\mouseSkull\matlab"
-        cmd= r""
-        cmd += f'matlab -nosplash -noFigureWindows -sd {MAT_PATH} -batch "fig_2_gif('
-        cmd+= f"'{input[0]}', '{output[0]}'); exit;" + '"'
 
-        print(cmd)
-        subprocess.call(cmd)
+        create_mah_gif(input_mat_file=input[0],input_obj_file=input[1],output_gif_file=output[0])
+
+# rule compute_mahalanobis_fig:
+#     input: "{dirname}/mahalanobis.mat", "{dirname}/head_affine_registered.obj"
+#     output: "{dirname}/mahalanobis.fig"
+#     threads: 1
+#     run:
+#         MAT_PATH = r"C:\Users\h492884\PycharmProjects\mouseSkull\matlab"
+#         cmd= r""
+#         cmd += f'matlab -nosplash -noFigureWindows -sd {MAT_PATH} -batch "create_mah_fig('
+#         cmd+= f"'{input[0]}', '{input[1]}', '{output[0]}'); exit;" + '"'
+#         print(cmd)
+#         subprocess.call(cmd)
+#
+# rule compute_mahalanobis_gif:
+#     input: "{dirname}/mahalanobis.fig"
+#     output: "{dirname}/mahalanobis.gif"
+#     threads: 1
+#     run:
+#         MAT_PATH = r"C:\Users\h492884\PycharmProjects\mouseSkull\matlab"
+#         cmd= r""
+#         cmd += f'matlab -nosplash -noFigureWindows -sd {MAT_PATH} -batch "fig_2_gif('
+#         cmd+= f"'{input[0]}', '{output[0]}'); exit;" + '"'
+#
+#         print(cmd)
+#         subprocess.call(cmd)
 
 rule compute_percentile_gif:
     input: "{dirname}/mahalanobis.mat", "{dirname}/head_affine_registered.obj"

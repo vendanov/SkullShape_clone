@@ -15,7 +15,6 @@ import tensorflow.keras.models as Models
 import tensorflow.keras.optimizers as Optimizer
 import tensorflow.keras.metrics as Metrics
 import tensorflow.keras.utils as Utils
-import matplotlib.pyplot as plt
 from sklearn.utils import shuffle
 from sklearn.metrics import confusion_matrix as CM
 from random import randint
@@ -33,7 +32,6 @@ from IPython.display import clear_output
 import random, re, math
 import tensorflow.keras.backend as K
 from sklearn.model_selection import train_test_split
-import matplotlib.pyplot as plt
 import zipfile
 from tensorflow.keras.models import model_from_json
 from datetime import datetime
@@ -238,76 +236,83 @@ def predict_head_slice_1278(parent, loaded_model_head_slice):
 
     ################################ FIND IMAGE WITH MAX PROPABILITY ###########################
     # find max propability
-    max_value = max(df['Propability'], default=0)
-    if max_value != 0:
-        print('MAX Propability is ', max_value)
-        # index for max propability value
-        index_max = df['Propability'][df['Propability'] == max_value].index
-        # print(index_max)
+    df_sorted = df.sort_values(by=['Propability'], ascending=False)
+    for i in range(len(df.index)):  # iterate over max values
 
-        # name of the file with max propability value
-        # print(df['Image_name'][index_max])
+        max_value = df_sorted.iloc[i]['Propability']
+        if max_value != 0:
+            print('MAX Propability is ', max_value)
+            # index for max propability value
+            index_max = df['Propability'][df['Propability'] == max_value].index
+            # print(index_max)
+            index_sep = index_max.tolist()[0]
+            list_for_folder = df['Image_name'].values.tolist()
+            # name of the file with max propability value
+            # print(df['Image_name'][index_max])
 
-        name = df['Image_name'][index_max].to_string(index=False)
-        # path to the image to display
-        print('Path to image:', parent + '/' + name)
-        # read the image
-        prediction_slice = cv2.imread(parent + '/' + name)
-        # show image
-        plt.imshow(prediction_slice)
-        # dont remove this line, will not show the image !!!!!!!
-        plt.show()
+            name = df['Image_name'][index_max].to_string(index=False)
+            # path to the image to display
+            print('Path to image:', parent + '/' + name)
+            # read the image
+            prediction_slice = cv2.imread(parent + '/' + name)
+            # show image
+            # dont remove this line, will not show the image !!!!!!!
 
-        list_for_folder = df['Image_name'].values.tolist()
-        # get id of mouse for the path and folders name
-        id_mouse = list_for_folder[0].split('rec')[0]
 
-        ################# FIND INDEX OF LAST IMAGE OF FANTOM2 ####################
-        path_fantom2 = parent + '/' + id_mouse + 'fantom2'
-        print('Path to the fantom2 folder:', path_fantom2)
-        for last_file in sorted(os.listdir(path_fantom2), reverse=True):
-            fantoms2.append(last_file)
+            # get id of mouse for the path and folders name
+            id_mouse = list_for_folder[0].split('rec')[0]
 
-        print('END slice fantom2:', fantoms2[0])
+            ################# FIND INDEX OF LAST IMAGE OF FANTOM2 ####################
+            path_fantom2 = parent + '/' + id_mouse + 'fantom2'
+            print('Path to the fantom2 folder:', path_fantom2)
+            for last_file in sorted(os.listdir(path_fantom2), reverse=True):
+                fantoms2.append(last_file)
 
-        index_fantom2 = df['Image_name'][df['Image_name'] == fantoms2[0]].index
-        index_fantom2_list = index_fantom2.tolist()
-        index_fantom2_end = index_fantom2_list[0]
-        print('Index of last fanrom2 image in the full data frame:', index_fantom2)
+            print('END slice fantom2:', fantoms2[0])
 
-        ###########To save images to the HEAD and BODY folders ###############
-        index = index_max.tolist()
-        index_sep = index[0]
-        print('Index of predicted head slice:', index_sep)
+            index_fantom2 = df['Image_name'][df['Image_name'] == fantoms2[0]].index
+            index_fantom2_list = index_fantom2.tolist()
+            index_fantom2_end = index_fantom2_list[0]
+            print('Index of last fanrom2 image in the full data frame:', index_fantom2)
 
-        list_head = list_for_folder[index_sep:]
-        list_body = list_for_folder[index_fantom2_end + 180:index_sep]
+            ###########To save images to the HEAD and BODY folders ###############
 
-        print('Count of head images:', len(list_head))
-        print('Count of body images:', len(list_body))
 
-        ###################################### CREATE PATH, FOLDERS TO SAVE ###########################
-        log = 'rec.log'
-        log_file = id_mouse + log
+            print('Index of predicted head slice:', index_sep)
 
-        path_to_save_head = os.path.join(parent, id_mouse + 'head')
-        path_to_save_body = os.path.join(parent, id_mouse + 'body')
+            list_head = list_for_folder[index_sep:]
+            list_body = list_for_folder[index_fantom2_end + 180:index_sep]
+            t_head_len = len(list_head)
+            t_body_len = len(list_body)
+            print('Count of head images:', len(list_head))
+            print('Count of body images:', len(list_body))
+            if (len(list_head) < 300) or (t_head_len > t_body_len):
+                print("HEAD", t_head_len)
+                print("BODY", t_body_len)
+                continue
+            ###################################### CREATE PATH, FOLDERS TO SAVE ###########################
+            log = 'rec.log'
+            log_file = id_mouse + log
 
-        os.mkdir(path_to_save_head)
-        os.mkdir(path_to_save_body)
-        print('Folders were created')
+            path_to_save_head = os.path.join(parent, id_mouse + 'head')
+            path_to_save_body = os.path.join(parent, id_mouse + 'body')
 
-        # coping images to the new folder
-        for imageName in list_head:
-            # print(imageName)
-            shutil.copy(os.path.join(parent, imageName), path_to_save_head)
-            shutil.copy(os.path.join(parent, log_file), path_to_save_head)
-        for imageName in list_body:
-            # print(imageName)
-            shutil.copy(os.path.join(parent, imageName), path_to_save_body)
-            shutil.copy(os.path.join(parent, log_file), path_to_save_body)
+            os.mkdir(path_to_save_head)
+            os.mkdir(path_to_save_body)
+            print('Folders were created')
 
-        print('Images were copied to the new folders')
+            # coping images to the new folder
+            for imageName in list_head:
+                # print(imageName)
+                shutil.copy(os.path.join(parent, imageName), path_to_save_head)
+                shutil.copy(os.path.join(parent, log_file), path_to_save_head)
+            for imageName in list_body:
+                # print(imageName)
+                shutil.copy(os.path.join(parent, imageName), path_to_save_body)
+                shutil.copy(os.path.join(parent, log_file), path_to_save_body)
+
+            print('Images were copied to the new folders')
+            break
 
 
 def masking_predict_1278(parent, width, height, loaded_model_masking):
@@ -613,25 +618,28 @@ def detect_circle(parent, cohort_folder, visited_path, failed_path):
         else:
             current_path = "".join((parent, '/', file_name))
             if os.path.isdir(current_path):
-                print(current_path)
+                print("TESTING NEW1 ", current_path)
                 detect_circle(current_path, cohort_folder, visited_path, failed_path)
             else:
                 continue
 
     # lists to dataframe columns
-
-    df['Image_name'] = result_names[:300]
-    df['Circle'] = result_circle[:300]
-
+    #print('Names ', result_names)
+    df['Image_name'] = result_names[:500]
+    df['Circle'] = result_circle[:500]
+    print('Circle ',df['Circle'])
     # create a index to calculate the differance
     df['num'] = pd.Series([x + 1 for x in range(0, len(df))])
 
     # delete rows without detecting
     data = df.dropna(axis=0)
-    print(data)
+    print("DATA ",data)
     # calculate difference between rows to find cilinder 2 starts
     data['diff'] = data['num'].diff()
 
+    print("DATA2 ",data)
+    print("DATA DIF ",data['diff'].values)
+    print("DATA NUM ",data['num'].values)
     # to find row with maximum differemce to separate cil1 and cil2 rows
     row_find = data[data['diff'] > 10]
 
@@ -648,6 +656,17 @@ def detect_circle(parent, cohort_folder, visited_path, failed_path):
     print(value_sep)
 
     # all lists, that are needed in the FOR loop
+    df_cilinder_1 = []
+    start_index_cilinder_1 = []
+    end_index_cilinder_1 = []
+    df_cilinder1_save = []
+
+    df_cilinder_2 = []
+    start_index_cilinder_2 = []
+    end_index_cilinder_2 = []
+    df_cilinder2_save = []
+
+    folder_name_split = []
 
     path_to_save_cilinder1 = []
     path_to_save_cilinder2 = []

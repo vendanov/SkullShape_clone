@@ -267,7 +267,6 @@ MICE_FOLDERS = {PROCESS_DIR / x.subj_fold.name: x for _,x
                 in dataset.items()
                 if (x.preprocessed
                     and not (PROCESS_DIR / x.subj_fold.name/"ct_image_.nii.gz").exists()
-
                     )}
 
 
@@ -287,7 +286,6 @@ rule all:
 rule convert_images:
     input: "{dirname}"
     output: "{dirname}/ct_image_.nii.gz"
-
     threads: 1
 
     run:

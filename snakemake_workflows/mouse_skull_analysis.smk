@@ -1,4 +1,4 @@
-import copy
+import os
 import os
 import pickle
 import shlex
@@ -21,7 +21,7 @@ from matplotlib import animation, cm
 from sklearn.covariance import EmpiricalCovariance
 from tqdm.auto import tqdm
 
-sys.path.append('..' + os.sep + 'scripts')
+sys.path.append(  str(Path(workflow.basedir).parent / 'scripts'))
 from gpa import *
 from vtk_helper import *
 PROCESS_DIR = Path(config['cohort_dir'])
@@ -31,11 +31,11 @@ REF_IMAGE = Path('/home/varhai/PRIMUS/data/83_BIOINFORMATICS/Igor/reference_imag
 
 PARAMETER_FILE_NONLIN = Path("/home/varhai/PRIMUS/data/83_BIOINFORMATICS/Igor/workdir/Parameters_Stable_NL.txt")
 MESH_TRANSFORM_SCRIPT = "/home/varhai/PRIMUS/data/83_BIOINFORMATICS/Igor/scripts/support/convert_mesh.py"
-SLICER_CORE = "/home/varhai/Slicer-5.2.2-linux-amd64/Slicer"
+SLICER_CORE = config['slicer_home']#"/home/varhai/Slicer-5.2.2-linux-amd64/Slicer"
 
-MALE_FACE_PERC = r"/home/varhai/PRIMUS/data/83_BIOINFORMATICS/Igor/workdir/wt_male_f_percentiles.mat"
-FEMALE_FACE_PERC = r"/home/varhai/PRIMUS/data/83_BIOINFORMATICS/Igor/workdir/wt_female_f_percentiles.mat"
-coh_file  = r"/home/varhai/PRIMUS/data/83_BIOINFORMATICS/Igor/workdir/wt_cohorts_pts.pkl"
+MALE_FACE_PERC = config['male_perc']#r"/home/varhai/PRIMUS/data/83_BIOINFORMATICS/Igor/workdir/wt_male_f_percentiles.mat"
+FEMALE_FACE_PERC = config['female_perc']#r"/home/varhai/PRIMUS/data/83_BIOINFORMATICS/Igor/workdir/wt_female_f_percentiles.mat"
+coh_file  = config['cohort_pickle']#r"/home/varhai/PRIMUS/data/83_BIOINFORMATICS/Igor/workdir/wt_cohorts_pts.pkl"
 
 #####script for head conversion
 @dataclass
