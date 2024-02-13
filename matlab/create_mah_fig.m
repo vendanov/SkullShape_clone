@@ -1,4 +1,4 @@
-function create_mah_fig(input_mat_file, input_obj_file, output_fig_file)
+function create_mah_fig(input_mat_file, input_obj_file, output_fig_file, num_limit)
     % Load the energies
     load(input_mat_file);
     energies = transpose(energies);
@@ -12,7 +12,10 @@ function create_mah_fig(input_mat_file, input_obj_file, output_fig_file)
     colormap('jet');  % Set the colormap (adjust as desired)
     colorbar;         % Display the colorbar
     axis equal;
-    clim([0,100]);
+    if num_limit == -1
+    else
+        clim([0,num_limit]);
+    end
     savefig(fig,output_fig_file);
 
     % Close the figure

@@ -1,4 +1,4 @@
-function create_perc_fig(input_mat_file, input_obj_file, output_fig_file)
+function create_perc_fig(input_mat_file,face_perc_file, input_obj_file, output_fig_file)
     % Load the energies
     load(input_mat_file);
     %energies = transpose(energies);

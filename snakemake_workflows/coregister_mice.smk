@@ -17,7 +17,7 @@ from vtk_helper import *
 PROCESS_DIR = Path(config['process_dir'])
 #print(PROCESS_DIR)
 #pathlib.Path('/home/varhai/PRIMUS/data/83_BIOINFORMATICS/Igor/mouse_skull_workdir')
-REF_IMAGE = pathlib.Path('/home/varhai/PRIMUS/data/83_BIOINFORMATICS/Igor/reference_image/')
+REF_IMAGE = pathlib.Path('/home/varhai/PRIMUS/data/83_BIOINFORMATICS/Igor/reference_gut/')
 PARAMETER_FILE_NONLIN = pathlib.Path("/home/varhai/PRIMUS/data/83_BIOINFORMATICS/Igor/workdir/Parameters_Stable_NL.txt")
 PARAMETER_FILE_LIN = pathlib.Path("/home/varhai/PRIMUS/data/83_BIOINFORMATICS/Igor/scripts/models/affine.txt")
 ref_im = REF_IMAGE / 'ct_image_.nii.gz'
@@ -147,55 +147,7 @@ def asses_registration_quality(registered_image: Union[str,pathlib.Path], refere
     return ssd
 
 
-# def register_affine(ref_image,flo_im,output_folder,out_image):
-#     cmd =  f"elastix -f {str(ref_image)} -m {str(flo_im)} -p {str(PARAMETER_FILE_LIN)} " \
-#            # f"-fMask {str(ref_image.parent / 'oriented_mask.nii.gz')} " \
-#            # f"-mMask {str(flo_im.parent / 'oriented_mask.nii.gz')} " \
-#            f"-out {str(output_folder)}"
-#     shell(cmd)
-#
-#     shell(f"mv -f {str(output_folder/ 'result.0.nii.gz')} {str(out_image)}")
-#
-#     transform_parameters = sitk.ReadParameterFile(str(output_folder/ 'TransformParameters.0.txt') )
-#     linear_parameters = []
-#     for param in transform_parameters:
-#         if 'Transform' in param[0]:
-#             linear_parameters.extend(list(map(float, param[1:])))
-#
-#     # Extract the affine transformation matrix from the linear parameters
-#     affine_matrix = np.array([[linear_parameters[0], linear_parameters[1], linear_parameters[2], linear_parameters[3]],
-#                               [linear_parameters[4], linear_parameters[5], linear_parameters[6], linear_parameters[7]],
-#                               [linear_parameters[8], linear_parameters[9], linear_parameters[10], linear_parameters[11]],
-#                               [0.0, 0.0, 0.0, 1.0]])
-#     #write transformation
-#     res = ""
-#     for i in range(affine_matrix.shape[0]):
-#         res += " ".join([str(x) for x in affine_matrix[i].tolist()]) + "\n"
-#
-#     with open(str(output_folder/ "affine_head.mat"),"wt") as f:
-#         f.write(res)
 
-# def register_affine(ref_image,flo_im,output_folder,out_image):
-#     fixed_image = sitk.ReadImage(ref_image,sitk.sitkFloat32)
-#     moving_image = sitk.ReadImage(flo_im,sitk.sitkFloat32)
-#     initial_transform = sitk.CenteredTransformInitializer(fixed_image,
-#         moving_image,
-#         sitk.Euler3DTransform(),
-#         sitk.CenteredTransformInitializerFilter.MOMENTS)
-#
-#     registration_method = sitk.ImageRegistrationMethod()
-#     registration_method.SetMetricAsCorrelation()
-#     # registration_method.SetInterpolator(sitk.sitkLinear) #2. Replace with sitkLinear
-#     registration_method.SetOptimizerAsLBFGSB(gradientConvergenceTolerance=1e-5,
-#         numberOfIterations=20,
-#         maximumNumberOfCorrections=5,
-#         maximumNumberOfFunctionEvaluations=1000,
-#         costFunctionConvergenceFactor=1e+7)  #1. Increase to 1000
-#
-#     # Don't optimize in-place, we would like to run this cell multiple times
-#     registration_method.SetInitialTransform(initial_transform,inPlace=False)
-#
-#
 
 
 

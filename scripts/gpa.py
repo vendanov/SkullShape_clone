@@ -1,6 +1,5 @@
 import pickle
 from typing import Dict
-import scipy.spatial as sp
 import numpy as np
 from tqdm.auto import tqdm
 #from concurrent.futures import ProcessPoolExecutor

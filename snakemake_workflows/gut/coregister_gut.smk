@@ -11,7 +11,7 @@ import vtk
 import shlex
 import sys
 import nibabel as nib
-
+from platipy.imaging.registration import deformable
 sys.path.append(  str(Path(workflow.basedir).parent.parent / 'scripts'))
 from gpa import *
 from vtk_helper import *
@@ -560,8 +560,19 @@ rule non_rigid_registration_rule:
     run:
         # script coregisters reference image (choosen as default to each linearly registered head for reverse mesh generation
         or_ref_im = REF_IMAGE / 'oriented_image.nii.gz'
-        non_rigid_registration(flo_im=str(or_ref_im), ref_im=input[0],
-            out_transform=output[1],out_image=output[0],param_file=str(PARAMETER_FILE_NONLIN))
+        # read in images
+        bin_mask_1 = sitk.ReadImage(input[0],sitk.sitkUInt8)
+        bin_mask_2 = sitk.ReadImage(or_ref_im,sitk.sitkUInt8)
+
+        # perform registration
+        bin_mask_2_reg, tfm = deformable.fast_symmetric_forces_demons_registration(bin_mask_1,bin_mask_2)
+
+        # save results
+        sitk.WriteImage(bin_mask_2_reg,output[0])
+        sitk.WriteTransform(tfm,output[1])
+
+        # non_rigid_registration(flo_im=str(or_ref_im), ref_im=input[0],
+        #     out_transform=output[1],out_image=output[0],param_file=str(PARAMETER_FILE_NONLIN))
 
 
 
