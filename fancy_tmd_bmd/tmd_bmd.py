@@ -1,5 +1,7 @@
 import os
 import glob
+from pathlib import Path
+
 from PIL import Image
 import shutil
 import numpy as np
@@ -7,6 +9,7 @@ import cv2
 import pandas as pd
 import warnings
 import shutil
+from sklearn.cluster import KMeans
 
 warnings.simplefilter("ignore")
 import tensorflow.keras.layers as Layers
@@ -105,10 +108,12 @@ def mask_fantoms(parent: str):
         df = df.sort_values(by=['id'])
 
         path_to_mask_fantom1 = "".join((fantom1_path, '/', id_mouse, '__fantom1_mask'))
-        os.mkdir(path_to_mask_fantom1)
+        Path(path_to_mask_fantom1).mkdir(exist_ok=True)
+        #os.mkdir(path_to_mask_fantom1)
 
         path_to_ROI_fantom1 = "".join((fantom1_path, '/', id_mouse, '__fantom1_ROI'))
-        os.mkdir(path_to_ROI_fantom1)
+        Path(path_to_ROI_fantom1).mkdir(exist_ok=True)
+        #os.mkdir(path_to_ROI_fantom1)
 
         for i in range(len(df)):
             image = cv2.imread(fantom1_path + '/' + df.id[i] + '.bmp', cv2.COLOR_BGR2GRAY)
@@ -125,8 +130,8 @@ def mask_fantoms(parent: str):
             cv2.imwrite(path_to_ROI_fantom1 + '/' + df.id[i] + '.bmp', result)
 
             log = '__rec.log'
-            log_file = id_mouse + log
-            shutil.copy(os.path.join(parent, log_file), path_to_ROI_fantom1)
+            log_file = list(Path(parent).glob("*_rec.log"))[0]
+            shutil.copy(log_file, path_to_ROI_fantom1)
 
         ########### Fantom 2 ##################
         fantom2_path = "".join((parent, '/', id_mouse, '__fantom2'))
@@ -135,10 +140,12 @@ def mask_fantoms(parent: str):
         df = df.sort_values(by=['id'])
 
         path_to_mask_fantom2 = "".join((fantom2_path, '/', id_mouse, '__fantom2_mask'))
-        os.mkdir(path_to_mask_fantom2)
+        Path(path_to_mask_fantom2).mkdir(exist_ok=True)
+        #os.mkdir(path_to_mask_fantom2)
 
         path_to_ROI_fantom2 = "".join((fantom2_path, '/', id_mouse, '__fantom2_ROI'))
-        os.mkdir(path_to_ROI_fantom2)
+        Path(path_to_ROI_fantom2).mkdir(exist_ok=True)
+        #os.mkdir(path_to_ROI_fantom2)
 
         for i in range(len(df)):
             image = cv2.imread(fantom2_path + '/' + df.id[i] + '.bmp', cv2.COLOR_BGR2GRAY)
@@ -154,8 +161,8 @@ def mask_fantoms(parent: str):
 
             cv2.imwrite(path_to_ROI_fantom2 + '/' + df.id[i] + '.bmp', result)
             log = '__rec.log'
-            log_file = id_mouse + log
-            shutil.copy(os.path.join(parent, log_file), path_to_ROI_fantom2)
+            log_file = list(Path(parent).glob("*_rec.log"))[0]
+            shutil.copy(log_file, path_to_ROI_fantom2)
 
         """ 
         else:
@@ -177,6 +184,8 @@ def predict_head_slice_1278(parent, loaded_model_head_slice):
     :return:
     """
     df = pd.DataFrame(columns=['Image_name', 'Propability'])
+    print("predict df",df)
+    print("predict parent",parent)
     # df_whole_mouse= pd.DataFrame(columns = ['Image_name'])
 
     result_names = []
@@ -258,9 +267,9 @@ def predict_head_slice_1278(parent, loaded_model_head_slice):
             # show image
             # dont remove this line, will not show the image !!!!!!!
 
-
             # get id of mouse for the path and folders name
-            id_mouse = list_for_folder[0].split('rec')[0]
+            #id_mouse = list_for_folder[0].split('rec')[0]
+            id_mouse = str(Path(parent).name.split('Rec')[0]) + "_"
 
             ################# FIND INDEX OF LAST IMAGE OF FANTOM2 ####################
             path_fantom2 = parent + '/' + id_mouse + 'fantom2'
@@ -275,8 +284,7 @@ def predict_head_slice_1278(parent, loaded_model_head_slice):
             index_fantom2_end = index_fantom2_list[0]
             print('Index of last fanrom2 image in the full data frame:', index_fantom2)
 
-            ###########To save images to the HEAD and BODY folders ###############
-
+            ###########To save images to the HEAD and BODY folders ####################
 
             print('Index of predicted head slice:', index_sep)
 
@@ -291,8 +299,7 @@ def predict_head_slice_1278(parent, loaded_model_head_slice):
                 print("BODY", t_body_len)
                 continue
             ###################################### CREATE PATH, FOLDERS TO SAVE ###########################
-            log = 'rec.log'
-            log_file = id_mouse + log
+            log_file = list(Path(parent).glob("*rec.log"))[0]
 
             path_to_save_head = os.path.join(parent, id_mouse + 'head')
             path_to_save_body = os.path.join(parent, id_mouse + 'body')
@@ -304,7 +311,7 @@ def predict_head_slice_1278(parent, loaded_model_head_slice):
             # coping images to the new folder
             for imageName in list_head:
                 # print(imageName)
-                shutil.copy(os.path.join(parent, imageName), path_to_save_head)
+                shutil.copy(os.path.join(parent, imageName),path_to_save_head)
                 shutil.copy(os.path.join(parent, log_file), path_to_save_head)
             for imageName in list_body:
                 # print(imageName)
@@ -331,20 +338,24 @@ def masking_predict_1278(parent, width, height, loaded_model_masking):
 
     if file_name.endswith('_Rec'):  # in future '__predictions'
         id_mouse = file_name.split('_Rec')[0]
+        print("file_name ", file_name)
         print(id_mouse)
         body_path = "".join((parent, '/', id_mouse, '__body'))
-        print(body_path)
+        print("body path",body_path)
+
         df = create_dataframe(body_path)
         df = df.sort_values(by=['id'])
         df = df.reset_index(drop=True)
 
         id_mouse = df.id[0].split('rec')[0]
         df = df[df.id != id_mouse + 'rec_spr']
+        print("df: ", df)
 
         val_dataset = get_validation_dataset(df)
+        print(val_dataset)
         preds = loaded_model_masking.predict(val_dataset)
-
-        path_to_save_mask = "".join((parent, '/', id_mouse, 'mask'))
+        id_mouse = file_name.split('_Rec')[0]
+        path_to_save_mask = "".join((parent, '/', id_mouse, '__mask'))
         print(path_to_save_mask)
         os.mkdir(path_to_save_mask)
 
@@ -356,8 +367,9 @@ def masking_predict_1278(parent, width, height, loaded_model_masking):
             cv2.imwrite(path_to_save_mask + '/' + df['id'][i] + '.bmp', im)
 
             ##############
-        path_to_save_mask_edit = "".join((parent, '/', id_mouse, 'mask_edited'))
-        os.mkdir(path_to_save_mask_edit)
+        path_to_save_mask_edit = "".join((parent, '/', id_mouse, '__mask_edited'))
+
+        Path(path_to_save_mask_edit).mkdir(exist_ok=True)
         print(path_to_save_mask_edit)
 
         for i in range(len(preds)):
@@ -390,8 +402,9 @@ def masking_predict_1278(parent, width, height, loaded_model_masking):
 
             ################
 
-        path_to_save_predictions = "".join((parent, '/', id_mouse, 'predictions'))
-        os.mkdir(path_to_save_predictions)
+        path_to_save_predictions = "".join((parent, '/', id_mouse, '__predictions'))
+        Path(path_to_save_predictions).mkdir(exist_ok=True)
+
         print(path_to_save_predictions)
 
         for i in range(len(preds)):
@@ -402,8 +415,8 @@ def masking_predict_1278(parent, width, height, loaded_model_masking):
             cv2.imwrite(path_to_save_predictions + '/' + df.id[i] + '.bmp', result)
 
         log = 'rec.log'
-        log_file = id_mouse + log
-        shutil.copy(os.path.join(parent, log_file), path_to_save_predictions)
+        log_file = list(Path(parent).glob("*rec.log"))[0]
+        shutil.copy(log_file, path_to_save_predictions)
 
         # delete mask folder for the first masks
         shutil.rmtree(path_to_save_mask)
@@ -444,10 +457,10 @@ def TMD_BMD_1278(parent, cohort_folder):
         print(id_mouse_without)
         list_ID_without.append(id_mouse_without)
 
-        fantom1_path = "".join((parent, '/', id_mouse, '__fantom1', '/', id_mouse, '__fantom1_ROI'))
-        fantom2_path = "".join((parent, '/', id_mouse, '__fantom2', '/', id_mouse, '__fantom2_ROI'))
-        body_path = "".join((parent, '/', id_mouse, '__predictions'))
-        print(body_path)
+        fantom1_path  = list(Path(parent).glob("**/*_fantom1_ROI"))[0];fantom1_path = str(fantom1_path)
+        fantom2_path = list(Path(parent).glob("**/*_fantom2_ROI"))[0];fantom2_path = str(fantom2_path)
+        body_path = list(Path(parent).glob("*__predictions"))[0];body_path = str(body_path)
+        print("BODY PATH ",body_path)
 
         ###### BODY Coef14 ##############
         for file_name in sorted(os.listdir(body_path)):
@@ -556,15 +569,69 @@ def TMD_BMD_1278(parent, cohort_folder):
             for_df_BMD_TMD.append(TMD31)
             for_df_BMD_TMD.append(BMD14)  ############### CHANGE HERE
 
-            df_BMD_TMD = df_BMD_TMD.append(pd.DataFrame([for_df_BMD_TMD],
-                                                        columns=['CCP_mouseID', 'CCP_date', 'CCP_metadata',
-                                                                 'CCP_DXA_793_001', 'CCP_DXA_004_001']),
-                                           ignore_index=True)
+
+            _tmp = pd.DataFrame([for_df_BMD_TMD],columns=['CCP_mouseID', 'CCP_date',
+                                                          'CCP_metadata','CCP_DXA_793_001',
+                                                          'CCP_DXA_004_001'])
+            df_BMD_TMD = pd.concat([df_BMD_TMD,_tmp],ignore_index=True)
+
             # print(AU_fantom1)
             df_BMD_TMD.to_csv(cohort_folder + '/' + 'BMD_TMD' + '/' + list_ID[0] + '.csv')  ########## CHANGE HERE
             print(parent + '/' + list_ID[0] + '.csv')
     else:
         print('ERROR!!!! NO Data for Analysis! Look into the folder!')
+
+
+def compute_circle_intensity(image, circle):
+    a, b, r = int(circle[0]), int(circle[1]), int(circle[2])
+
+    # Create a black image with the same size as the original image
+    mask = np.zeros_like(image)
+
+    # Draw the circle on the mask
+    cv2.circle(mask, center=(a, b), radius=r, color=[1.], thickness=-1)
+
+    # Compute the mean intensity of the pixels within the circle on the original image
+    mean_intensity = cv2.mean(image, mask=mask)[0]
+
+    return mean_intensity
+
+
+def find_cluster_transition_indices(cluster_labels):
+    transition_indices = []
+
+    prev_label = cluster_labels[0]
+    for i, label in enumerate(cluster_labels[1:], start=1):
+        if label != prev_label:
+            transition_indices.append(i)
+            prev_label = label
+
+    return transition_indices
+
+
+def split_phantoms_by_intensity(data):
+    # split data to two phantoms by intensity (2 clusters)
+    intensities_reshaped = data['Intensities'].values.reshape(-1, 1)
+    print("Intensities: ", intensities_reshaped)
+    # Initialize KMeans with 2 clusters
+    kmeans = KMeans(n_clusters=2, random_state=0)
+
+    # Fit KMeans to the data
+    kmeans.fit(intensities_reshaped)
+
+    # Get the cluster centroids
+    centroids = kmeans.cluster_centers_
+    print("Centroids: ", centroids)
+    # Assign each intensity to a cluster based on the closest centroid
+    clusters = kmeans.predict(intensities_reshaped)
+    print("Clusters: ", clusters)
+
+    data['Phantom'] = clusters
+
+    indices = find_cluster_transition_indices(clusters)
+    print("Indices: ", indices)
+
+    return pd.DataFrame(data.iloc[indices[0]]).transpose()
 
 
 def detect_circle(parent, cohort_folder, visited_path, failed_path):
@@ -574,6 +641,7 @@ def detect_circle(parent, cohort_folder, visited_path, failed_path):
     result_names = []
     result_circle = []
     result_cilinder = []
+    result_intensities = []
     xls_names = []
     xls_fantom1_count = []
     xls_fantom2_count = []
@@ -584,8 +652,11 @@ def detect_circle(parent, cohort_folder, visited_path, failed_path):
     log_file = ''
 
     # iterate over all the files in directory 'parent'
+    index = 0
     for file_name in sorted(os.listdir(parent)):
         current_path = "".join((parent, '/', file_name))
+        if index > 400:
+            break
 
         if file_name.find("IR") > 0:
             continue
@@ -604,6 +675,7 @@ def detect_circle(parent, cohort_folder, visited_path, failed_path):
 
         if file_name.endswith(".bmp"):
             # if it's a txt file, print its name (or do whatever you want)
+            index = index + 1
             bgr_img = cv2.imread(parent + '/' + file_name)
             # to grayscale the images
             gray = cv2.cvtColor(bgr_img, cv2.COLOR_BGR2GRAY)
@@ -611,6 +683,18 @@ def detect_circle(parent, cohort_folder, visited_path, failed_path):
             # to detect circles
             detected_circles = cv2.HoughCircles(gray_blurred, cv2.HOUGH_GRADIENT, 1, 20, param1=50, param2=30,
                                                 minRadius=6, maxRadius=21)
+
+            print("crc: ", detected_circles)
+            if detected_circles is None:
+                result_intensities.append(None)
+            else:
+                # Choose the circle with the highest intensity
+                max_intensity_circle = max(detected_circles[0],
+                                           key=lambda circle: compute_circle_intensity(gray, circle))
+                # Compute intensity of the chosen circle
+                intensity = compute_circle_intensity(gray, max_intensity_circle)
+                result_intensities.append(intensity)
+
             # changed the 'minRadius' variable from 12 to 6 to account for images that were half the size. From 848 to 424.
             # add to the list
             result_names.append(file_name)
@@ -624,36 +708,39 @@ def detect_circle(parent, cohort_folder, visited_path, failed_path):
                 continue
 
     # lists to dataframe columns
-    #print('Names ', result_names)
-    df['Image_name'] = result_names[:500]
-    df['Circle'] = result_circle[:500]
-    print('Circle ',df['Circle'])
+    # print('Names ', result_names)
+    df['Image_name'] = result_names
+    df['Circle'] = result_circle
+    df['Intensities'] = result_intensities
+    print('Circle ', df['Circle'])
     # create a index to calculate the differance
     df['num'] = pd.Series([x + 1 for x in range(0, len(df))])
 
     # delete rows without detecting
     data = df.dropna(axis=0)
-    print("DATA ",data)
+    print("DATA ", data)
     # calculate difference between rows to find cilinder 2 starts
     data['diff'] = data['num'].diff()
 
-    print("DATA2 ",data)
-    print("DATA DIF ",data['diff'].values)
-    print("DATA NUM ",data['num'].values)
+    print("DATA2 ", data)
+    print("DATA DIF ", data['diff'].values)
+    print("DATA NUM ", data['num'].values)
     # to find row with maximum differemce to separate cil1 and cil2 rows
-    row_find = data[data['diff'] > 10]
+    row_find = data[data['diff'] > 9]
 
     if row_find.empty:
-        print('No fantoms were found!')
+        print('No fantoms were found! testing 2nd approach')
+        row_find = split_phantoms_by_intensity(data)
+        print('Split index:', row_find)
 
     row_find = row_find.sort_values(by=['diff', 'num'], ascending=False)
-    print(row_find)
+    print("row find ", row_find)
 
     # print(row_find)
 
     #  get value for separating
     value_sep = row_find.iloc[0:1]['num']
-    print(value_sep)
+    print("value sep ", value_sep)
 
     # all lists, that are needed in the FOR loop
     df_cilinder_1 = []
@@ -676,18 +763,22 @@ def detect_circle(parent, cohort_folder, visited_path, failed_path):
 
     for value in value_sep:
         sep = int(value)
+        print(value)
+
         # to create a new column
+        print("TEST0")
         data['cilinder'] = np.where(data['num'] < sep, 'cilinder 1', 'cilinder 2')
         # to have only rows with value 'cilinder 1'
         df_cilinder_1 = data[data['cilinder'] == 'cilinder 1']
+        print("TEST0.1")
         # to have only rows with value 'cilinder 2'
         df_cilinder_2 = data[data['cilinder'] == 'cilinder 2']
-
+        print("TEST1")
         # index of start cilinder1
         start_index_cilinder_1 = df_cilinder_1.index[0]
         # index of end cilinder1
         end_index_cilinder_1 = df_cilinder_1.index[-1]
-
+        print("TEST2")
         # index of start cilinder2
         start_index_cilinder_2 = df_cilinder_2.index[0]
         # index of end cilinder2
@@ -697,24 +788,30 @@ def detect_circle(parent, cohort_folder, visited_path, failed_path):
         df_cilinder1_save = df[(df['num'] > start_index_cilinder_1 + 5) & (df['num'] <= end_index_cilinder_1 - 4)]
         # to have all row, encluded missing row without detected circles, to copy all images cilinder 2 in order to the new folder
         df_cilinder2_save = df[(df['num'] > start_index_cilinder_2 + 5) & (df['num'] <= end_index_cilinder_2 - 4)]
-
+        print("TEST3")
         # form dataframe to list
+        print("df_cilinder1_save ", df_cilinder1_save)
+        print("df_cilinder2_save ", df_cilinder2_save)
         list_of_single_column_cil1 = df_cilinder1_save['Image_name'].tolist()
         list_of_single_column_cil2 = df_cilinder2_save['Image_name'].tolist()
 
         # to have the ID of the mouse for creating the folder name
 
-        folder_name_split = list_of_single_column_cil1[0].split('rec')[0]
+        folder_name_split =Path(parent).name.split('Rec')[0]
         log = 'rec.log'
-        log_file = folder_name_split + log
-
+        log_file = list(Path(parent).glob("*rec.log"))[0] # find the log file
+        print("LOG FILE ", log_file)
+        print("TEST3")
         # path to the new folder to save only cilinder
-        path_to_save_cilinder1 = os.path.join(parent, folder_name_split + 'fantom1')
-        path_to_save_cilinder2 = os.path.join(parent, folder_name_split + 'fantom2')
 
+        path_to_save_cilinder1 = os.path.join(parent, folder_name_split + '_fantom1')
+        path_to_save_cilinder2 = os.path.join(parent, folder_name_split + '_fantom2')
+        print("TEST4")
         file_name = file_name.split("_~")[0]
+        print("TEST5")
         count1 = len(list_of_single_column_cil1)
         count2 = len(list_of_single_column_cil2)
+
         if count1 != 0:
             xls_fantom1_count.append(count1)
             xls_fantom2_count.append(count2)

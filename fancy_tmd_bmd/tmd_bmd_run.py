@@ -169,6 +169,11 @@ def new_old_scanner_check(parent):
         os.mkdir(cohort_folder + '/' + 'csv_files_check_new_old')
 
     for file_name in sorted(os.listdir(parent)):
+        #print("FILE NAME: ", file_name)
+        if (Path(parent) / file_name / "Ignore").exists():
+            print("BROKE ", file_name)
+            continue
+
         if file_name == 'Ignore':
             continue
         # break if head already extracted
@@ -178,7 +183,7 @@ def new_old_scanner_check(parent):
                 or file_name.endswith('head') or file_name.endswith('mask_edited')
                 or file_name.endswith('predictions')):
             print("BROKE HERE FOR", file_name)
-            break
+            continue
         if (('ROI' in file_name) or ('VOI' in file_name) or file_name.endswith('RecDXA') or file_name.endswith(
                 'Morphology')):
             continue
@@ -223,9 +228,6 @@ def new_old_scanner_check(parent):
                 ID.append(id_mouse)
                 scanner.append(1278)
                 path.append(parent)
-
-
-
         else:
             current_path = "".join((parent, '/', file_name))
             if os.path.isdir(current_path):
@@ -245,6 +247,7 @@ def new_old_scanner_check(parent):
     if len(df) > 0:
         df.to_csv(cohort_folder + '/' + 'csv_files_check_new_old' + '/' + id_mouse + '.csv', index=False)
 
+
 if os.path.exists(cohort_folder + '/' + 'csv_files_check_new_old'):
     shutil.rmtree(cohort_folder + '/' + 'csv_files_check_new_old')
 new_old_scanner_check(cohort_folder)
@@ -259,16 +262,21 @@ df_cohort.to_csv(cohort_folder + '/' + "Check_1278_1176_died.csv", index=False)
 # shutil.rmtree(cohort_folder+'/'+'csv_files_check_new_old')
 df_cohort = pd.read_csv(cohort_folder + '/' + "Check_1278_1176_died.csv")
 df_cohort.sort_values(by=['ID'], inplace=True)
-
+print("Data Frame for the whole cohort", df_cohort)
 df_cohort["IMAGE_WIDTH"] = pd.to_numeric(df_cohort["IMAGE_WIDTH"])
 df_cohort["IMAGE_HEIGHT"] = pd.to_numeric(df_cohort["IMAGE_HEIGHT"])
-df_cohort_1278 = df_cohort.loc[df_cohort['SCANNER'] == '1278']  # If df_cohort_1278 is empty, change the '' situation
-df_cohort_1176 = df_cohort.loc[df_cohort['SCANNER'] == '1176']  # If df_cohort_1176 is empty, change the '' situation
+#df_cohort['SCANNER'] = df_cohort['SCANNER'].astype(str)
+#print("Scanners in the cohort", df_cohort['SCANNER'] ==1278)
+df_cohort_1278 = df_cohort.loc[df_cohort['SCANNER'] == 1278]  # If df_cohort_1278 is empty, change the '' situation
+df_cohort_1176 = df_cohort.loc[df_cohort['SCANNER'] == 1176]  # If df_cohort_1176 is empty, change the '' situation
 print('Data Frame for Scanner 1176')
 print(df_cohort_1176)
 print('Data Frame for Scanner 1278')
 print(df_cohort_1278)
 df_cohort_1176['ID_without'] = df_cohort_1176.ID.str.split('_').str[2]
+if len(df_cohort_1176) == 0 and len(df_cohort_1278) == 0:
+    print('No data for this cohort')
+    exit()
 
 
 def predict_head_slice_1176(parent):
@@ -436,7 +444,8 @@ def masking_predict_1176(parent, width, height):
 
             id_mouse = df.id[0].split('rec')[0]
             df = df[df.id != id_mouse + 'rec_spr']
-
+            id_mouse = Path(parent).name.split("_Rec")[0] + "_"
+            print("Id mouse", id_mouse)
             val_dataset = get_validation_dataset(df)
             preds = loaded_model_masking_1176.predict(val_dataset)
 
@@ -698,7 +707,7 @@ def holder_masking_predict(parent, width, height):
 
             val_dataset = get_validation_dataset(df)
             preds = loaded_model_holder_masking_1176.predict(val_dataset)
-
+            id_mouse = Path(parent).name.split("_Rec")[0] + "_"
             path_to_save_mask = "".join((parent, '/', id_mouse, '_holder_mask'))
             print(path_to_save_mask)
             os.mkdir(path_to_save_mask)
@@ -777,78 +786,101 @@ def holder_masking_predict(parent, width, height):
             else:
                 continue
 
+def check_fantoms_created(path):
+
+    if len(list(Path(path).glob("*fantom1"))) > 0 and len(list(Path(path).glob("*fantom2"))) > 0:
+        return True
+    else:
+        return False
+
+def check_head_body_split(path):
+    if len(list(Path(path).glob("*head"))) > 0 and len(list(Path(path).glob("*body"))) > 0:
+        return True
+    else:
+        return False
 print('############## Processing of scanner 1176 ###########')
 ########################################################################################################## Part 1 for 1176: function to predict the head slice ############################################
-print('############## Part 1: function to predict the head slice - Running ###########')
 init = time.time()
-
 for path in df_cohort_1176['PATH']:
-    predict_head_slice_1176(path)
 
-end = time.time()
-print("############################This step took " + str(end - init) + " seconds###########################")
-print('############## Part 1 - Finished ###########')
-########################################################################################################## Part 2 for 1176: function for masking body without head ############################################
-print('############## Part 2: function for masking body without head - Running ###########')
-init = time.time()
+    try:
 
-for path in df_cohort_1176['PATH']:
-    selected_row = df_cohort_1176.loc[df_cohort_1176['PATH'] == path]
-    masking_predict_1176(path, int(selected_row['IMAGE_WIDTH']), int(selected_row['IMAGE_HEIGHT']))
+        print('############## Part 1: function to predict the head slice - Running ###########')
+        init = time.time()
 
-end = time.time()
-######################This step took " + str(end-init) + " seconds###########################")
-print('############## Part 2 - Finished ###########')
-########################################################################################################## Part 3 for 1176: function to mask holder ############################################
-print('############## Part 3: function to mask holder - Running ###########')
-init = time.time()
+        predict_head_slice_1176(path)
 
-for path in df_cohort_1176['PATH']:
-    selected_row = df_cohort_1176.loc[df_cohort_1176['PATH'] == path]
-    holder_masking_predict(path, int(selected_row['IMAGE_WIDTH']), int(selected_row['IMAGE_HEIGHT']))
+        end = time.time()
+        print("############################This step took " + str(end - init) + " seconds###########################")
+        print('############## Part 1 - Finished ###########')
+        ########################################################################################################## Part 2 for 1176: function for masking body without head ############################################
+        print('############## Part 2: function for masking body without head - Running ###########')
+        init = time.time()
 
-end = time.time()
-print("############################This step took " + str(end - init) + " seconds###########################")
-print('############## Part 3 - Finished ###########')
-########################################################################################################## Part 4 for 1176: function for BMD and TMD calculation ############################################
-print('############## Part 4: function for BMD and TMD calculation - Running ###########')
-init = time.time()
+        selected_row = df_cohort_1176.loc[df_cohort_1176['PATH'] == path]
+        masking_predict_1176(path, int(selected_row['IMAGE_WIDTH']), int(selected_row['IMAGE_HEIGHT']))
 
-for path in df_cohort_1176['PATH']:
-    isBMD_TMD = os.path.exists(cohort_folder + '/' + 'BMD_TMD')
-    if not isBMD_TMD:
-        os.mkdir(cohort_folder + '/' + 'BMD_TMD')
-    TMD_BMD_1176(path)
+        end = time.time()
+        ######################This step took " + str(end-init) + " seconds###########################")
+        print('############## Part 2 - Finished ###########')
+        ########################################################################################################## Part 3 for 1176: function to mask holder ############################################
+        print('############## Part 3: function to mask holder - Running ###########')
+        init = time.time()
 
-end = time.time()
-print("############################This step took " + str(end - init) + " seconds###########################")
-print('############## Part 4 - Running ###########')
+        selected_row = df_cohort_1176.loc[df_cohort_1176['PATH'] == path]
+        holder_masking_predict(path, int(selected_row['IMAGE_WIDTH']), int(selected_row['IMAGE_HEIGHT']))
+
+        end = time.time()
+        print("############################This step took " + str(end - init) + " seconds###########################")
+        print('############## Part 3 - Finished ###########')
+        ########################################################################################################## Part 4 for 1176: function for BMD and TMD calculation ############################################
+        print('############## Part 4: function for BMD and TMD calculation - Running ###########')
+        init = time.time()
+
+        isBMD_TMD = os.path.exists(cohort_folder + '/' + 'BMD_TMD')
+        if not isBMD_TMD:
+            os.mkdir(cohort_folder + '/' + 'BMD_TMD')
+        TMD_BMD_1176(path)
+    except Exception as e:
+        print("error on path ", path)
+        print(e)
+
 print('############## Processing of scanner 1176 FINISHED ###########')
 ########################################################################################################## Part 1 for 1278: function to detect the fantom s##############################################
 print('############## Processing of scanner 1278 ###########')
 for path in df_cohort_1278['PATH']:
-    print("STARTED PROCESSING ", path)
+
     try:
+        print("STARTED PROCESSING ", path)
+        if Path(path).name.split("_Rec")[0] in [x.name.split(".csv")[0] for x in Path(cohort_folder + '/' + 'BMD_TMD').glob("*.csv") ]:
+            print("ALREADY PROCESSED ", path)
+            continue
+
         isExist = os.path.exists(cohort_folder + '/' + 'csv_files')
         if not isExist:
             os.mkdir(cohort_folder + '/' + 'csv_files')
         init = time.time()
-        fant_df = detect_circle(path, cohort_folder, [], [])
+        if not check_fantoms_created(path):
+            fant_df = detect_circle(path, cohort_folder, [], [])
 
         end = time.time()
-        print("function to detect the phantoms ############################This step took " + str(end - init) + " seconds###########################")
+        print("function to detect the phantoms ############################This step took " + str(
+            end - init) + " seconds###########################")
         init = time.time()
-        predict_head_slice_1278(path, loaded_model_head_slice=loaded_model_head_slice)
+        if not check_head_body_split(path):
+            predict_head_slice_1278(path, loaded_model_head_slice=loaded_model_head_slice)
         end = time.time()
-        print("function head extract ############################This step took " + str(end - init) + " seconds###########################")
+        print("function head extract ############################This step took " + str(
+            end - init) + " seconds###########################")
         init = time.time()
 
         selected_row = df_cohort_1278.loc[df_cohort_1278['PATH'] == path]
         masking_predict_1278(path, int(selected_row['IMAGE_WIDTH']), int(selected_row['IMAGE_HEIGHT']),
-                                 loaded_model_masking)
+                             loaded_model_masking)
 
         end = time.time()
-        print("function masking ############################This step took " + str(end - init) + " seconds###########################")
+        print("function masking ############################This step took " + str(
+            end - init) + " seconds###########################")
 
         init = time.time()
 
@@ -856,16 +888,16 @@ for path in df_cohort_1278['PATH']:
 
         end = time.time()
 
-        print("function mask_fantoms ############################This step took " + str(end - init) + " seconds###########################")
+        print("function mask_fantoms ############################This step took " + str(
+            end - init) + " seconds###########################")
         init = time.time()
         isBMD_TMD = os.path.exists(cohort_folder + '/' + 'BMD_TMD')
         if not isBMD_TMD:
             os.mkdir(cohort_folder + '/' + 'BMD_TMD')
         TMD_BMD_1278(path, cohort_folder)
         end = time.time()
-        print("function TMD_BMD_1278 ############################This step took " + str(end - init) + " seconds###########################")
-
-
+        print("function TMD_BMD_1278 ############################This step took " + str(
+            end - init) + " seconds###########################")
     except Exception as e:
+        print("error on path ", path)
         print(e)
-
