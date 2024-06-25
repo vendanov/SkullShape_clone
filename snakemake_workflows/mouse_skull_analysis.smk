@@ -49,7 +49,7 @@ class MouseDescriptor:
     cohort_fold: Path
     preprocessed: bool
 
-def has_head(path: Path,treshold=300) -> bool:
+def has_head(path: Path,treshold=200) -> bool:
     """
     return false if no head or head is small
     :param path: path of folder
@@ -59,8 +59,10 @@ def has_head(path: Path,treshold=300) -> bool:
     if len(x) > 0:
         head_folder = x[0]
         if len(list(head_folder.glob("**/*.bmp") )) > treshold:
+
             return True
         else:
+            print("Failed coubt of head images", len(list(head_folder.glob("**/*.bmp") )))
             return False
     return False
 
@@ -202,7 +204,7 @@ rule make_nifti_image:
 
         #Path(output.FLAG).parent.mkdir(exist_ok=True)
         Path(output.FLAG).touch(exist_ok=True)
-        if not has_head(Path(input[0])):
+        if not has_head(Path(input[0]),200):
             print(f"Subject {input[0]} do not contain valid head")
             return
             #raise ValueError(f"Subject {input[0]} do not contain valid head")

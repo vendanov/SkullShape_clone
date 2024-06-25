@@ -807,6 +807,25 @@ def check_head_body_split(path):
         return True
     else:
         return False
+
+
+def remove_old_1176_head_scans_folders(path : Path):
+
+    for fold in path.iterdir():
+        if fold.is_dir():
+            if fold.name.endswith('__head'):
+                shutil.rmtree(fold)
+            elif fold.name.endswith('__body'):
+                shutil.rmtree(fold)
+            elif fold.name.endswith('__mask'):
+                shutil.rmtree(fold)
+            elif fold.name.endswith('mask_edited'):
+                shutil.rmtree(fold)
+            elif fold.name.endswith('_predictions'):
+                shutil.rmtree(fold)
+
+
+
 print('############## Processing of scanner 1176 ###########')
 ########################################################################################################## Part 1 for 1176: function to predict the head slice ############################################
 init = time.time()
@@ -816,40 +835,15 @@ for path in df_cohort_1176['PATH']:
 
         print('############## Part 1: function to predict the head slice - Running ###########')
         init = time.time()
-
+        print("STARTED PROCESSING ", path)
+        remove_old_1176_head_scans_folders(Path(path))
         predict_head_slice_1176(path)
 
         end = time.time()
         print("############################This step took " + str(end - init) + " seconds###########################")
         print('############## Part 1 - Finished ###########')
-        ########################################################################################################## Part 2 for 1176: function for masking body without head ############################################
-        print('############## Part 2: function for masking body without head - Running ###########')
-        init = time.time()
 
-        selected_row = df_cohort_1176.loc[df_cohort_1176['PATH'] == path]
-        masking_predict_1176(path, int(selected_row['IMAGE_WIDTH']), int(selected_row['IMAGE_HEIGHT']))
 
-        end = time.time()
-        ######################This step took " + str(end-init) + " seconds###########################")
-        print('############## Part 2 - Finished ###########')
-        ########################################################################################################## Part 3 for 1176: function to mask holder ############################################
-        print('############## Part 3: function to mask holder - Running ###########')
-        init = time.time()
-
-        selected_row = df_cohort_1176.loc[df_cohort_1176['PATH'] == path]
-        holder_masking_predict(path, int(selected_row['IMAGE_WIDTH']), int(selected_row['IMAGE_HEIGHT']))
-
-        end = time.time()
-        print("############################This step took " + str(end - init) + " seconds###########################")
-        print('############## Part 3 - Finished ###########')
-        ########################################################################################################## Part 4 for 1176: function for BMD and TMD calculation ############################################
-        print('############## Part 4: function for BMD and TMD calculation - Running ###########')
-        init = time.time()
-
-        isBMD_TMD = os.path.exists(cohort_folder + '/' + 'BMD_TMD')
-        if not isBMD_TMD:
-            os.mkdir(cohort_folder + '/' + 'BMD_TMD')
-        TMD_BMD_1176(path)
     except Exception as e:
         print("error on path ", path)
         print(e)
@@ -956,21 +950,36 @@ excel_transf = excel_transf.rename(columns={"Identificator": "ID", 'CCP_DXA_001'
 database = database.sort_values(by='ID')
 database = database[['ID', 'SACRIFICE']]
 
+
+# find id's in folder that ends with '+'
+died = [x.split("_")[-1][:-1] for x in glob.glob(os.path.join(cohort_folder, "*+"))]
+# find ids that are not in excel table
+not_in_table = database['ID'][~database['ID'].isin(excel_transf['ID'])].dropna()
+not_in_table = not_in_table.tolist()
+
+for idd in not_in_table:
+    if idd in died:
+        new_row = {'Identificator': idd, 'CCP_DXA_001': '2021-12-13', 'Unnamed: 2': 'UCT 0245',
+                   'Unnamed: 3': 'IMPC_PSC_001', 'Unnamed: 4': 'IMPC_PSC_001'}
+    else:
+        new_row = {'Identificator': idd, 'CCP_DXA_001': '2021-12-13', 'Unnamed: 2': 'UCT 0241',
+                   'Unnamed: 3': 'IMPC_PSC_010', 'Unnamed: 4': 'IMPC_PSC_010'}
+    sheet1_df = pd.concat([sheet1_df, pd.DataFrame(new_row, index=[0])], ignore_index=True)
+
+
 # find ids that are not in excel table
 died = database['ID'][~database['ID'].isin(excel_transf['ID'])].dropna()
 died = died.tolist()
-for idd in died:
-    new_row = {'Identificator': idd, 'CCP_DXA_001': '2021-12-13', 'Unnamed: 2': 'UCT 0245',
-               'Unnamed: 3': 'IMPC_PSC_001', 'Unnamed: 4': 'IMPC_PSC_001'}
-    #df.append_ not working
-    sheet1_df = pd.concat([sheet1_df, pd.DataFrame(new_row, index=[0])], ignore_index=True)
-    #sheet1_df = sheet1_df.append(new_row, ignore_index=True)
+
+
 #
 # for i in df_cohort_1176['ID_without'].values:
 # sheet1_df.loc[sheet1_df['Identificator'] == i, 'Unnamed: 2'] = 'UCT 0241'
 
 # print(sheet1_df)
 # add ids with code
+
+
 sheet1_df = sheet1_df[2:].sort_values(by='Identificator')
 sheet1_df = sheet1_df.reset_index()
 sheet1_df.pop('index')

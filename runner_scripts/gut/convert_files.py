@@ -29,5 +29,6 @@ def process_directory(directory):
         # Convert the .tif file to NIfTI format and save it in the new directory
         tif_to_nifti(tif_file, output_dir)
 
+
 # Replace 'my_directory' with the path to your directory
 process_directory('/home/varhai/PRIMUS/data/83_BIOINFORMATICS/Igor/Data embryonic gut from USA')
