@@ -17,7 +17,7 @@ from vtk_helper import *
 PROCESS_DIR = Path(config['process_dir'])
 #print(PROCESS_DIR)
 #pathlib.Path('/home/varhai/PRIMUS/data/83_BIOINFORMATICS/Igor/mouse_skull_workdir')
-REF_IMAGE = pathlib.Path('/home/varhai/PRIMUS/data/83_BIOINFORMATICS/Igor/reference_gut/')
+REF_IMAGE = pathlib.Path('/home/varhai/PRIMUS/data/83_BIOINFORMATICS/Igor/reference_image/')
 PARAMETER_FILE_NONLIN = pathlib.Path("/home/varhai/PRIMUS/data/83_BIOINFORMATICS/Igor/workdir/Parameters_Stable_NL.txt")
 PARAMETER_FILE_LIN = pathlib.Path("/home/varhai/PRIMUS/data/83_BIOINFORMATICS/Igor/scripts/models/affine.txt")
 ref_im = REF_IMAGE / 'ct_image_.nii.gz'
@@ -398,10 +398,6 @@ rule reorient_mask_and_im:
         mask_im = sitk.ReadImage(mask)
         or_ref_im = REF_IMAGE / "oriented_image.nii.gz"
 
-        # shell(f"cp -f {str(flo_im)} {output[1]}")
-        # shell(f"cp -f {input[0]} {output[0]}")
-        # change_orientation(or_ref_im,flo_im_file=output[1],flo_mask_file=Path(output[0]))
-
 
         # reorient main image
         image1_res = reorient_normal_image(sitk.ReadImage(flo_im),mask_im)
@@ -527,16 +523,9 @@ rule linear_coregistration:
 
         shell(f"rm -rf {str(proces_folder / ('oriented_' ))}*")
         shell(f"rm -rf {str(proces_folder / ('coreg_'))}*")
-        # for i_sub in range(1,len(subject_test)):
-        #     shell(f"rm -f {subject_test[i_sub][0]}")
-        #     shell(f"rm -f {subject_test[i_sub][0].split('.')[0] + '.mat'}")
-        #     name_id = Path(subject_test[i_sub][0]).name.split("_")[1]
-        #     shell(f"rm -f {str(proces_folder / ('oriented_m_'+ name_id +'.nii.gz'))}")
-        #     shell(f"rm -f {str(proces_folder / ('oriented_'+ name_id +'.nii.gz'))}")
 
 
 
-#
 
 
 rule non_rigid_registration_rule:
