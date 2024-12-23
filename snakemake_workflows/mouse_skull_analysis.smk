@@ -381,6 +381,35 @@ def perform_linear_coregistration(floating_image, reference_image, ref_landmarks
     metric = measure_coregistration_metric(outputs[0],reference_image,metric="correlation")
     return metric
 
+def register_ants(flo_im,flo_mask,ref_im):
+    import ants
+    flo = ants.image_read(flo_im)
+    ref = ants.image_read(ref_im)
+    flo_msk = ants.image_read(flo_mask)
+
+    out = ants.registration(fixed=ref, moving=flo,type_of_transform='Affine',aff_metric="meansquares", verbose=True)
+    out_mat = out['fwdtransforms'][0]
+
+    # read_out_mat
+    #out_mat = ants.read_transform(out_mat)
+    # convert to numpy array
+    #write images
+    Path(flo_im.replace(".nii.gz","_reg.nii.gz")).unlink(missing_ok=True)
+    Path(flo_mask.replace(".nii.gz","_reg.nii.gz")).unlink(missing_ok=True)
+
+    flo_reg = ants.apply_transforms(fixed=ref, moving=flo,transformlist=out['fwdtransforms'])
+    flo_reg.to_file(flo_im.replace(".nii.gz","_reg.nii.gz"))
+
+    # copy file
+
+
+    flo_mask_reg = ants.apply_transforms(fixed=ref, moving=flo_msk,transformlist=out['fwdtransforms'])
+    flo_mask_reg.to_file(flo_mask.replace(".nii.gz","_reg.nii.gz"))
+    shell(f"cp -f '{flo_im.replace('.nii.gz','_reg.nii.gz')}' '{str(flo_im)}'")
+    shell(f"cp -f '{flo_mask.replace('.nii.gz','_reg.nii.gz')}' '{str(flo_mask)}'")
+
+
+
 def register_linear_full( floating_image: Union[str,Path],
                           reference_image: Union[str,Path],
                           float_mask:Union[str,Path],
@@ -404,33 +433,22 @@ def register_linear_full( floating_image: Union[str,Path],
     metrics_outputs.append(metric_0)
     print("Metric",metric_0)
 
-    flip_params = [(False,False,False),(False, True,True), (True,False, True), (True, True, False)]
+    flip_params = [ (True,False, True)]
     if metric_0 < 0.5:
-        for fl_pam in flip_params:
-            print("Flip",fl_pam)
-            flip_image(floating_image,str(outputs[0]), axis=fl_pam)
-            print("float mask",float_mask)
-            flip_image(float_mask,str(process_folder/ "coregistered_mask.nii.gz"), axis=fl_pam)
+        fl_pam = flip_params[0]
+        print("Flip",fl_pam)
+        flip_image(floating_image,str(outputs[0]), axis=fl_pam)
 
-            metric_1 = perform_linear_coregistration(outputs[0], reference_image, ref_landmarks, ref_mask, str(process_folder/ "coregistered_mask.nii.gz"), outputs, inaff,use_landmarks=False)
-            print("Metric!!",metric_1)
-            metrics_outputs.append(metric_1)
-            if metric_1 > 0.8:
-                break
 
-    if len(metrics_outputs) == 1:
-        return
-    else:
-        idx_max = np.argmax(metrics_outputs)
-        print("Max metric",metrics_outputs[idx_max])
-        print("idx_max",idx_max)
-        flip_image(floating_image,outputs[0],axis=flip_params[idx_max])
-        flip_image(float_mask,str(process_folder/ "coregistered_mask.nii.gz"),axis=flip_params[idx_max])
-        if idx_max == 0:
-            perform_linear_coregistration(outputs[0], reference_image, ref_landmarks, ref_mask, str(process_folder/ "coregistered_mask.nii.gz"), outputs, inaff,use_landmarks=True)
+        print("float mask",float_mask)
+        flip_image(float_mask,str(process_folder/ "coregistered_mask.nii.gz"), axis=fl_pam)
+
+        metric_1 = perform_linear_coregistration(outputs[0], reference_image, ref_landmarks, ref_mask, str(process_folder/ "coregistered_mask.nii.gz"), outputs, inaff,use_landmarks=True)
+        print("Metric!!",metric_1)
+        if metric_1 > metric_0:
+            pass
         else:
-            perform_linear_coregistration(outputs[0], reference_image, ref_landmarks, ref_mask, str(process_folder/ "coregistered_mask.nii.gz"), outputs, inaff,use_landmarks=False)
-
+            _ = perform_linear_coregistration(outputs[0], reference_image, ref_landmarks, ref_mask, str(process_folder/ "coregistered_mask.nii.gz"), outputs, inaff,use_landmarks=True)
 
 
 
@@ -448,8 +466,10 @@ rule otsu_threshold:
 
         inp_file =  Path(output.flag).parent / "ct_image.nii.gz"
         out_file = Path(output.flag).parent / "bone_coregistration_mask.nii.gz"
+        out_file.unlink(missing_ok=True)
         if inp_file.exists():
             otsu_treshold(inp_file,out_file)
+
         Path(output.flag).touch(exist_ok=True)
 
 
@@ -656,6 +676,10 @@ rule linear_coregistration:
     threads: 2
     run:
         process_folder = Path(output[0]).parent
+        Path(str(params.out_head)).unlink(missing_ok=True)
+        Path(str(params.out_mat)).unlink(missing_ok=True)
+        Path(str(params.out_affine)).unlink(missing_ok=True)
+
         register_linear_full(str(params.in_ct),str(ref_im),str(params.in_mask),ref_mask=str(ref_mask),
 
             outputs=(str(params.out_head), str(process_folder / 'TransformParameters.0.txt')))
@@ -694,6 +718,10 @@ rule non_rigid_registration_rule:
     threads: 2
     run:
         Path(output[0]).touch(exist_ok=True)
+        # remove previous files
+        Path(str(params.out_nlim)).unlink(missing_ok=True)
+        Path(str(params.out_txt)).unlink(missing_ok=True)
+
         if not params.inp_coregim.exists():
             return
         # script coregisters reference image (choosen as default to each linearly registered head for reverse mesh generation
@@ -711,6 +739,8 @@ rule inverse_transform_mesh_rule:
 
     threads: 2
     run:
+        # remove previous files
+        Path(str(params.out_head)).unlink(missing_ok=True)
         dir1name = str(Path(input[0]).parent)
         Path(output[0]).touch(exist_ok=True)
         #generate deformation field
@@ -761,6 +791,8 @@ rule general_procrustes:
         out_file = lambda wildcards: OUT_FOLD / f"{wildcards.subject}/abnormality_automated.csv",
     run:
         Path(output[0]).touch(exist_ok=True)
+        # remove previous files
+        Path(str(params.out_file)).unlink(missing_ok=True)
 
         if Path(params.head).exists():
             read_orig_mesh = read_vtk_obj(str(params.head))
