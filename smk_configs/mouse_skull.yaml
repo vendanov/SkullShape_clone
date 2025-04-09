@@ -1,9 +1,14 @@
+#coh_file: /home/varhai/PRIMUS/data/83_BIOINFORMATICS/Igor/workdir/JUW_3W_pts.pkl
 coh_file: /home/varhai/PRIMUS/data/83_BIOINFORMATICS/Igor/workdir/wt_cohorts_pts.pkl
-cohort_dir: /home/varhai/PRIMUS/data/83_IMPC_DATA/Bioimaging/SCREENad.Morpho&BodyComp/Screen20201019c161_Fam129a
-  & Fam219a & SMIM24-2M-X & wt
+cohort_dir: /home/varhai/PRIMUS/data/83_IMPC_DATA/Bioimaging/SCREENad.Morpho&BodyComp/Screen20241111c364_Col2a1 & Sp7 & wt
+#cohort_dir: /home/varhai/PRIMUS/data/83_IMPC_DATA/Bioimaging/JUVENILE_STUDY/JUVgenes_InVivo_c/Fgf23_03w/
 control_points_model: /home/varhai/PRIMUS/data/83_BIOINFORMATICS/Igor/workdir/pointnet_model_cp_detection.pth
+otsu_remove_outer : false
+linreg_simple : true
 female_face_perc: /home/varhai/PRIMUS/data/83_BIOINFORMATICS/Igor/workdir/wt_female_f_percentiles.mat
 male_face_perc: /home/varhai/PRIMUS/data/83_BIOINFORMATICS/Igor/workdir/wt_male_f_percentiles.mat
+#female_face_perc: /home/varhai/PRIMUS/data/83_BIOINFORMATICS/Igor/workdir/juw3wF3wf_percentiles.mat
+#male_face_perc: /home/varhai/PRIMUS/data/83_BIOINFORMATICS/Igor/workdir/juw3wM3wf_percentiles.mat
 mesh_transform_script: /home/varhai/PRIMUS/data/83_BIOINFORMATICS/Igor/scripts/support/convert_mesh.py
 parameter_file_lin: /home/varhai/PRIMUS/data/83_BIOINFORMATICS/Igor/mouse_skull_pipelines/models/affine.txt
 parameter_file_nonlin: /home/varhai/PRIMUS/data/83_BIOINFORMATICS/Igor/workdir/Parameters_Stable_NL.txt
@@ -19,3 +24,5 @@ slicer_options:
   no_splash: true
   testing: true
 sutures_model: /home/varhai/PRIMUS/data/83_BIOINFORMATICS/Igor/workdir/best_model_sutures_gen.pth
+side_model : /home/varhai/PRIMUS/data/83_BIOINFORMATICS/Igor/mouse_skull_workdir/side_model_detect.pth
+side_ref_xml : /home/varhai/PRIMUS/data/83_BIOINFORMATICS/Igor/reference_image/oriented_image_side.xml
