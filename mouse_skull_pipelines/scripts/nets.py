@@ -1,10 +1,19 @@
+from pathlib import Path
+
 import torch.nn as nn
 import torch.nn as nn
 import torch.nn.functional as F
 from scipy.interpolate import RegularGridInterpolator
+
+import torchvision.transforms as T
 from torchvision.models import vgg16
 import nibabel as nib
-from .image_algorithms import marching_cubes
+from torchvision.models.detection import fasterrcnn_resnet50_fpn
+from torchvision.models.detection.faster_rcnn import FastRCNNPredictor
+
+from .image_algorithms import marching_cubes, generate_projection_image, read_sitk_image, convert_2d_to_PIL, \
+    compute_2d_transform_no_opencv, convert_2d_to_3d_transform_no_opencv
+from .io import read_classes_from_xmls, convert_result_to_pascal_voc, read_xml_class
 from .mesh_algorithms import sample_points_from_mesh, normalize_point_cloud
 
 
@@ -368,4 +377,174 @@ class SuturesNetWrapper:
         output = torch.sigmoid(output)
         output = output.cpu().detach().numpy()
         return (output > 0.5)[0][0]
+
+def predict_image_boxes(model, image, device, threshold, num_classes):
+    """
+    Predicts bounding boxes and labels for an image using a trained model.
+
+    Args:
+        model: Trained object detection model.
+        image: PIL Image to be predicted.
+        device: Device to perform inference (e.g., "cpu" or "cuda").
+        threshold: Confidence threshold for filtering predictions.
+        num_classes: Total number of object classes.
+
+    Returns:
+        Tuple of filtered bounding boxes and labels.
+    """
+    # Convert image to tensor
+    image_tensor = T.ToTensor()(image).unsqueeze(0).to(device)
+
+    # Make prediction
+    model.eval()
+    with torch.no_grad():
+        prediction = model(image_tensor)
+
+    # Get boxes, scores, and labels
+    boxes = prediction[0]["boxes"]
+    scores = prediction[0]["scores"]
+    labels = prediction[0]["labels"]
+
+    # Filter by confidence threshold
+    valid_indices = scores > threshold
+    boxes = boxes[valid_indices]
+    scores = scores[valid_indices]
+    labels = labels[valid_indices]
+
+    # Enforce exactly one detection per class
+    final_boxes = []
+    final_labels = []
+
+    for cls in range(1, num_classes + 1):  # Skip background (class 0)
+        cls_indices = labels == cls
+        if cls_indices.sum() > 0:
+            cls_boxes = boxes[cls_indices]
+            cls_scores = scores[cls_indices]
+            # Select the box with the highest confidence
+            best_idx = torch.argmax(cls_scores)
+            final_boxes.append(cls_boxes[best_idx].tolist())
+            final_labels.append(cls)
+
+    return final_boxes, final_labels
+
+def coalign_roi_based(ref_path,flo_path,ref_rois,
+                      model_path, mask_path,
+                      res_path, res_mask_path, out_im_name = "flo_proj.png",axis=1):
+
+    refim = read_sitk_image(ref_path)
+    floim = read_sitk_image(flo_path)
+
+    flo_proj = generate_projection_image(floim, axis=axis)
+
+
+    classes  = ['__backgr'] + read_classes_from_xmls(ref_rois)
+
+    # Load the model
+    model = fasterrcnn_resnet50_fpn(weights=None)
+
+    # Adjust the model for your number of classes
+    num_classes = len(classes)  # Number of classes, including the background
+    in_features = model.roi_heads.box_predictor.cls_score.in_features
+
+    # Replace the pre-trained head with a new one
+    model.roi_heads.box_predictor = FastRCNNPredictor(in_features,num_classes)
+
+    # Load the trained weights
+    model.load_state_dict(torch.load(model_path))
+
+    # Set the model to evaluation mode
+    model.eval()
+
+    # compute the bounding boxes
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model.to(device)
+
+    flo_proj_im = convert_2d_to_PIL(flo_proj)
+
+    flo_boxes, flo_labels = predict_image_boxes(model, flo_proj_im, device, 0.1, num_classes)
+    (Path(flo_path).parent/out_im_name).unlink(missing_ok=True)
+    flo_proj_im.save( str(Path(flo_path).parent/out_im_name))
+    convert_result_to_pascal_voc(flo_boxes, flo_labels, classes, flo_proj.shape, str(Path(flo_path).parent/"flo_proj.xml"), out_im_name,str(Path(flo_path).parent))
+
+    # read ref_boxes and ref_labels from xml
+    ref_boxes, ref_labels = read_xml_class(ref_rois,classes)
+
+    print(flo_labels)
+    if len(flo_labels)> 1:
+
+        # convert boxes to center points
+
+        flo_centers = [ [(box[0] + box[2])/2, (box[1] + box[3])/2] for box in flo_boxes]
+        ref_centers = [ [(box[0] + box[2])/2, (box[1] + box[3])/2] for box in ref_boxes]
+
+        #get points in world coordinates
+        print("flo centers",flo_centers)
+
+        ref_aff = nib.load(ref_path).affine
+        flo_aff = nib.load(flo_path).affine
+        def get_world_coords_from_image_coords(coords, affine):
+            print('axis',axis)
+            if axis == 1:
+                proj = [affine @ np.array([int(x),0,int(y),1]) for x,y in coords]
+                res = [[x[0],x[2]] for x in proj]
+            elif axis == 0:
+
+
+
+                proj = [affine @ np.array([0,int(x),int(y),1]) for x,y in coords]
+                print("proj",proj)
+                res = [[x[1],x[2]] for x in proj]
+            elif axis == 2:
+                proj = [affine @ np.array([0,int(x),int(y),1]) for x,y in coords]
+                res = [[x[0],x[1]] for x in proj]
+            else:
+                raise ValueError("Invalid axis")
+            return res
+
+
+        flo_points = get_world_coords_from_image_coords(flo_centers,flo_aff)
+        print("flo points",flo_points)
+
+        ref_points = get_world_coords_from_image_coords(ref_centers,ref_aff)
+
+        print("ref points",ref_points)
+
+        # now make points matched to the flo points based on labels
+        matched_points = []
+
+        for label in flo_labels:
+            if label in ref_labels:
+                idx = ref_labels.index(label)
+                matched_points.append(ref_points[idx])
+            else:
+                print("No matching label found")
+
+
+
+        # compute the transformation
+
+        transform = compute_2d_transform_no_opencv(np.array(flo_points),np.array(matched_points))
+        print("transform",transform)
+        # convert to 3d
+        transform_3d = convert_2d_to_3d_transform_no_opencv(transform,projection_axis=axis)
+        print("transform 3d",transform_3d)
+
+        # apply the transformation nibabel
+        flo_nib = nib.load(flo_path)
+        flo_nib_data = flo_nib.get_fdata()
+        res_aff = np.dot(transform_3d,flo_nib.affine)
+        image_save = nib.Nifti1Image(flo_nib_data,res_aff)
+        nib.save(image_save,res_path)
+
+        flo_nib_mask = nib.load(mask_path)
+        flo_nib_mask_data = flo_nib_mask.get_fdata()
+        res_aff = np.dot(transform_3d,flo_nib_mask.affine)
+        image_save = nib.Nifti1Image(flo_nib_mask_data,res_aff)
+        nib.save(image_save,res_mask_path)
+
+        return len(flo_labels) < (len(classes)-1)
+    else :
+        print("No boxes found in flo image")
+        return None
+
 

@@ -1,8 +1,11 @@
 from typing import Union
 
+import PIL
 import vtk
 import numpy as np
 from pathlib import Path
+import SimpleITK as sitk
+
 
 
 # Algorithms for image processing using VTK and NumPy
@@ -71,6 +74,96 @@ def apply_transform_to_point(point, image_data,inverse=False):
     transformed_point = transformed_point_homogeneous[:3]
 
     return transformed_point
+
+def create_oriented_bounding_box(mesh: vtk.vtkPolyData):
+    """
+    Create an Oriented Bounding Box (OBB) from the given mesh.
+    Args:
+        mesh: vtkPolyData object.
+
+    Returns:
+        - Oriented bounding box (OBB) transform.
+        - Corner point of the OBB.
+        - Half-lengths along each axis.
+        - Directions (axes of the OBB).
+    """
+    obb_tree = vtk.vtkOBBTree(data_set=mesh, max_level=1)
+    obb_tree.BuildLocator()
+
+    # Allocate the variables needed for OBB
+    corner = [0.0, 0.0, 0.0]
+    max_point = [0.0, 0.0, 0.0]
+    mid_point = [0.0, 0.0, 0.0]
+    min_point = [0.0, 0.0, 0.0]
+    size = [0.0, 0.0, 0.0]
+
+    # Compute the OBB
+    obb_tree.ComputeOBB(mesh,corner, max_point, mid_point, min_point,size)
+
+    # Calculate OBB directions (axes)
+    axes = [
+        np.array(max_point) - np.array(corner),
+        np.array(mid_point) - np.array(corner),
+        np.array(min_point) - np.array(corner)
+    ]
+    axes = [axis / np.linalg.norm(axis) for axis in axes]  # Normalise the axes
+
+    # Create the OBB transform
+    transform = vtk.vtkTransform()
+    transform.PostMultiply()
+    transform.Translate(corner)
+
+    # Set rotation using the axes
+    matrix = transform.GetMatrix()
+    for i, axis in enumerate(axes):
+        for j in range(3):
+            matrix.SetElement(j, i, axis[j])
+    transform.SetMatrix(matrix)
+
+    return transform, size
+
+def crop_image_with_obb(input_file, output_file, obb_transform, obb_lengths):
+    """
+    Crop an image using an Oriented Bounding Box (OBB).
+    Args:
+        input_file: Path to the input NIfTI image file.
+        output_file: Path to the output NIfTI image file.
+        obb_transform: vtkTransform defining the OBB.
+        obb_lengths: Half-lengths along each OBB axis.
+    """
+    # Read the input image
+    reader = vtk.vtkNIFTIImageReader()
+    reader.SetFileName(str(input_file))
+    reader.Update()
+    image = reader.GetOutput()
+
+    # Create an implicit box function representing the OBB
+    box = vtk.vtkBox()
+    box.SetBounds(
+        -obb_lengths[0], obb_lengths[0],
+        -obb_lengths[1], obb_lengths[1],
+        -obb_lengths[2], obb_lengths[2]
+    )
+
+    # Apply the OBB transform to the box
+    transform_filter = vtk.vtkTransformFilter()
+    transform_filter.SetTransform(obb_transform)
+    transform_filter.SetInputConnection(reader.GetOutputPort())
+    transform_filter.Update()
+
+    # Use vtkImageReslice for extracting the ROI defined by the OBB
+    reslice = vtk.vtkImageReslice()
+    reslice.SetInputConnection(reader.GetOutputPort())
+    reslice.SetResliceTransform(obb_transform.GetInverse())
+    reslice.SetOutputExtent(-obb_lengths[0], obb_lengths[0], -obb_lengths[1], obb_lengths[1], -obb_lengths[2], obb_lengths[2])
+    reslice.Update()
+
+    # Write the cropped image
+    writer = vtk.vtkNIFTIImageWriter()
+    writer.SetFileName(str(output_file))
+    writer.SetInputConnection(reslice.GetOutputPort())
+    writer.Write()
+
 
 def marching_cubes(input_file: Union[Path, str]) -> vtk.vtkPolyData:
     """
@@ -184,3 +277,103 @@ def marching_cubes(input_file: Union[Path, str]) -> vtk.vtkPolyData:
     new_polydata.Modified()
 
     return new_polydata, (origin, spacing, transform)
+
+
+def read_sitk_image( file_name: Union[Path, str]) -> sitk.Image:
+    """
+    Read an image file using SimpleITK.
+    Args:
+        file_name: The path to the image file.
+
+    Returns:
+        The SimpleITK image object.
+    """
+    return sitk.ReadImage(str(file_name))
+
+
+def generate_projection_image(input_image: sitk.Image, axis=1):
+    """
+    Generate a maximum intensity projection image along the specified axis.
+    Args:
+        input_image: The input 3D image.
+        axis: The axis along which to project (0, 1, or 2).
+
+    Returns:
+        The projection image array.
+    """
+    # Create the projection filter
+    projection_filter = sitk.MaximumProjectionImageFilter()
+    projection_filter.SetProjectionDimension(axis)
+
+    # Execute the projection filter
+    projection_image = projection_filter.Execute(input_image)
+
+    projection_image_2d = sitk.GetArrayFromImage(projection_image)
+
+    if axis == 0:
+        projection_image_2d = projection_image_2d[:, :, 0]
+    elif axis == 1:
+        projection_image_2d = projection_image_2d[:, 0, :]
+    elif axis == 2:
+        projection_image_2d = projection_image_2d[0, :, :]
+    else:
+        raise ValueError("Invalid axis value. Must be 0, 1, or 2.")
+
+    return projection_image_2d
+
+def convert_2d_to_PIL(image: np.ndarray) -> PIL.Image:
+
+    flo_proj_im = image
+    flo_proj_im = (flo_proj_im - np.min(flo_proj_im)) / (np.max(flo_proj_im) - np.min(flo_proj_im))  # Normalize to 0-1
+    flo_proj_im = (flo_proj_im * 255).astype(np.uint8)  # Convert to 8-bit integer
+    flo_proj_im = PIL.Image.fromarray(flo_proj_im)
+    return flo_proj_im
+
+
+def compute_2d_transform_no_opencv(source_points, target_points):
+    """
+    Compute the 2D affine transformation matrix (rotation + translation)
+    that aligns `source_points` to `target_points` without using OpenCV.
+    """
+    # Calculate centroids of the source and target lines
+    source_centroid = np.mean(source_points, axis=0)
+    target_centroid = np.mean(target_points, axis=0)
+
+    # Center the points around the centroid
+    source_centered = source_points - source_centroid
+    target_centered = target_points - target_centroid
+
+    # Calculate the rotation matrix using Singular Value Decomposition (SVD)
+    H = np.dot(source_centered.T, target_centered)
+    U, _, Vt = np.linalg.svd(H)
+    R = np.dot(Vt.T, U.T)
+
+    # Ensure proper rotation (determinant must be +1)
+    if np.linalg.det(R) < 0:
+        Vt[1, :] *= -1
+        R = np.dot(Vt.T, U.T)
+
+    # Compute the translation vector
+    T = target_centroid - np.dot(R, source_centroid)
+
+    # Combine into a 2D affine transformation matrix
+    transform_matrix = np.eye(3)
+    transform_matrix[:2, :2] = R
+    transform_matrix[:2, 2] = T
+
+    return transform_matrix
+
+
+def convert_2d_to_3d_transform_no_opencv(transform_2d, projection_axis):
+    """
+    Convert a 2D affine transformation into a 3D affine transformation matrix.
+    """
+    transform_3d = np.eye(4)  # Initialize a 4x4 identity matrix
+    axes = [0, 1, 2]
+    axes.remove(projection_axis)  # Identify the 2D plane (e.g., XY if Z is the projection axis)
+
+    # Embed the 2D transformation matrix into the 3D matrix
+    transform_3d[np.ix_(axes, axes)] = transform_2d[:2, :2]  # Rotation
+    transform_3d[np.ix_(axes, [3])] = transform_2d[:2, 2].reshape(-1, 1)  # Translation
+
+    return transform_3d
