@@ -33,37 +33,21 @@ def sample_points_from_mesh(mesh: vtk.vtkPolyData, point_count=1000):
     return res_pts
 
 
-def load_landmark_elastix(filename, coordinate_system='LPS'):
+def read_mesh_from_file(mesh_file: Union[str, Path]):
     """
-    Load control points from an Elastix .pts file and convert them to the specified coordinate system.
-
-    Parameters:
-    - filename (str): Path to the .pts file.
-    - coordinate_system (str): 'LPS' or 'RAS'. Default is 'LPS'.
+    Read a mesh from a file using VTK.
+    Args:
+        mesh_file:
 
     Returns:
-    - points (numpy.ndarray): Array of shape [K, 3] containing control points.
+
     """
-    with open(filename, 'r') as f:
-        # Read the header lines and number of points
-        header = f.readline().strip()  # "index"
-        num_points = int(f.readline().strip())  # Number of points
+    reader = vtk.vtkOBJReader()
+    reader.SetFileName(str(mesh_file))
+    reader.Update()
+    return reader.GetOutput()
 
-        # Initialize an array to store the points
-        points = np.zeros((num_points, 3))
 
-        # Read each point
-        for idx in range(num_points):
-            line = f.readline().strip().split()
-            points[idx] = np.array([float(coord) for coord in line])
-
-    # Convert from RAS to LPS if necessary
-    if coordinate_system.upper() == 'RAS':
-        points = convert_LPS_to_RAS(points)
-    elif coordinate_system.upper() != 'LPS':
-        raise ValueError("Coordinate system must be either 'LPS' or 'RAS'")
-
-    return points
 
 def save_landmark_elastix(filename, points, coordinate_system='LPS'):
     """

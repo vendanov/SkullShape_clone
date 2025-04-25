@@ -1,9 +1,12 @@
 import pickle
+from pathlib import Path
 from typing import Dict
 import numpy as np
 from tqdm.auto import tqdm
 #from concurrent.futures import ProcessPoolExecutor
 from procrustes import generic
+
+from mouse_skull_pipelines.scripts.mesh_algorithms import read_mesh_from_file
 
 
 def procreustes_alignment(reference_mesh, compute_mesh):
@@ -63,6 +66,34 @@ def gpa(meshes: Dict[str, np.ndarray], max_iterations=100, threshold=1e-14):
         result_shapes[key] = result
 
     return reference_mesh, aligned_meshes, result_shapes
+
+
+def gpa_new(meshes: Dict[str, Path]):
+    """
+    Perform Generalized Procrustes Analysis (GPA) on a set of meshes.
+    Args:
+        meshes: A dictionary where keys are mesh names and values are paths to mesh files.
+    Returns:
+
+    """
+    # reading meshes
+    keys = list(meshes.keys())[0]
+
+    input_list = vtk.vtkMultiBlockDataSet()
+    for i, f in enumerate(keys):
+        pd = read_mesh_from_file(meshes[f])
+        input_list.SetBlock(i, pd)
+    procrustes = vtk.vtkProcrustesAlignmentFilter()
+    procrustes.SetInputData(input_list)
+    procrustes.GetLandmarkTransform().SetModeToSimilarity()
+    procrustes.Update()
+
+    aligned_output = procrustes.GetOutput()
+    aligned_meshes = {
+        meshes[key]: (aligned_output.GetBlock(i) )for i, key in enumerate(meshes.keys())
+    }
+    return aligned_meshes
+
 
 
 

@@ -182,6 +182,15 @@ class PointNetRegressor(nn.Module):
 
         return output
 
+    @staticmethod
+    def landmark_point_generation(input_file: str, control_points_model: str):
+        net = PointNetRegressor(1000, 9)
+        net.load_state_dict(torch.load(control_points_model))
+        with torch.no_grad():
+            net.eval()
+
+            pts = net.compute_from_image(input_file)
+            return pts
 
 # %%
 import numpy as np

@@ -1,10 +1,13 @@
-from typing import Union
+import subprocess
+from dataclasses import dataclass
+from typing import Union, Tuple
 
 import PIL
 import vtk
 import numpy as np
 from pathlib import Path
 import SimpleITK as sitk
+
 
 
 
@@ -377,3 +380,239 @@ def convert_2d_to_3d_transform_no_opencv(transform_2d, projection_axis):
     transform_3d[np.ix_(axes, [3])] = transform_2d[:2, 2].reshape(-1, 1)  # Translation
 
     return transform_3d
+
+
+@dataclass
+class LinearRegistrationConfig:
+    is_simple: bool = False
+    ref_landmarks: str = None
+    side_landmarks_model: str = None
+    side_reference_xml: str = None
+    control_points_model: str = None
+
+
+
+def register_linear_full(floating_image: Union[str, Path],
+                         reference_image: Union[str, Path],
+                         float_mask: Union[str, Path],
+                         ref_mask: Union[str, Path],
+                         outputs: Tuple[str, str],
+                         config: LinearRegistrationConfig,
+                         inaff=None):
+    """
+
+    :param floating_image:
+    :param reference_image:
+    :param float_mask:
+    :param ref_mask:
+    :param outputs:
+    :param inaff:
+    :return:
+    """
+    from .nets import coalign_roi_based
+
+    metrics_outputs = {}
+
+    process_folder = Path(floating_image).parent
+    res_mask_path = process_folder / "coregistered_mask.nii.gz"
+    if config.is_simple:
+
+        perform_linear_coregistration(floating_image, reference_image, config.ref_landmarks, ref_mask, float_mask, outputs, config, inaff, use_landmarks=False)
+        return
+
+    if coalign_roi_based(
+        reference_image,floating_image,
+        ref_rois=config['side_ref_xml'],model_path=config['side_model'],mask_path=float_mask,
+        res_path=outputs[0],
+        res_mask_path=res_mask_path,out_im_name='axis_0.png',axis=0) is not None:
+
+        metric_0 = perform_linear_coregistration(
+            outputs[0],reference_image,config.ref_landmarks,ref_mask,res_mask_path,outputs,inaff,use_landmarks=False)
+    else:
+        metric_0 = perform_linear_coregistration(
+            floating_image,reference_image,config.ref_landmarks,ref_mask,float_mask,outputs,inaff,use_landmarks=False)
+    #metrics_outputs.append(metric_0)
+    print("Metric 0",metric_0)
+
+def compute_affine_transformation(a_points, b_points):
+    """
+    Compute the affine transformation matrix that maps a_points to b_points.
+
+    Parameters:
+    - a_points: List or array of three source points (3x3 matrix).
+    - b_points: List or array of three destination points (3x3 matrix).
+
+    Returns:
+    - A 4x4 homogeneous transformation matrix.
+    """
+    a_points = np.array(a_points)
+    b_points = np.array(b_points)
+
+    # Compute centroids
+    centroid_a = np.mean(a_points,axis=0)
+    centroid_b = np.mean(b_points,axis=0)
+
+    # Subtract centroids to center the points
+    a_centered = a_points - centroid_a
+    b_centered = b_points - centroid_b
+
+    # Compute covariance matrix
+    H = a_centered.T @ b_centered
+
+    # Singular Value Decomposition
+    U, S, Vt = np.linalg.svd(H)
+
+    # Compute rotation matrix
+    R = Vt.T @ U.T
+
+    # Special reflection case
+    if np.linalg.det(R) < 0:
+        print("Reflection detected, adjusting for proper rotation.")
+        Vt[2, :] *= -1
+        R = Vt.T @ U.T
+
+    # Compute translation vector
+    t = centroid_b - R @ centroid_a
+
+    # Construct homogeneous transformation matrix
+    homogeneous_matrix = np.identity(4)
+    homogeneous_matrix[:3, :3] = R
+    homogeneous_matrix[:3, 3] = t
+
+    print("Hom matrix",homogeneous_matrix)
+
+    return homogeneous_matrix
+import nibabel as nib
+
+def update_image_affine(input_ct, output_head, affine_matrix, copy=False, copy_im=None):
+    if copy:
+        image_f = nib.load(copy_im)
+        image_affine = image_f.affine
+        old_im = nib.load(input_ct)
+
+        new_image = nib.Nifti1Image(old_im.get_fdata(),image_affine)
+        print("Image affine",input_ct,image_affine)
+
+        nib.save(new_image,output_head)
+        return
+
+    image_f = nib.load(input_ct)
+    image_affine = image_f.affine
+    print("Image affine",input_ct,image_affine)
+
+    new_affine = affine_matrix @ image_affine
+
+    # Update the image's affine matrix
+    new_image = nib.Nifti1Image(image_f.get_fdata(),new_affine,image_f.header)
+    nib.save(new_image,output_head)
+
+
+
+def measure_coregistration_metric(image_path1, image_path2, metric="correlation"):
+    """
+    Measure coregistration metric between two images.
+
+    Parameters:
+        image_path1 (str): Path to the first image.
+        image_path2 (str): Path to the second image.
+        metric (str): Metric to evaluate. Options: "mutual_information", "correlation".
+
+    Returns:
+        float: Metric value representing similarity between the images.
+    """
+    # Load the images
+    image1 = sitk.ReadImage(image_path1,sitk.sitkFloat32)
+    image2 = sitk.ReadImage(image_path2,sitk.sitkFloat32)
+
+    # Convert images to numpy arrays
+    image1_array = sitk.GetArrayFromImage(image1)
+    image2_array = sitk.GetArrayFromImage(image2)
+
+    # Compute the metric
+    if metric == "mutual_information":
+        joint_histogram, _, _ = np.histogram2d(image1_array.ravel(),image2_array.ravel(),bins=32)
+        joint_prob = joint_histogram / np.sum(joint_histogram)
+        marginal_prob1 = np.sum(joint_prob,axis=0)
+        marginal_prob2 = np.sum(joint_prob,axis=1)
+        mutual_information = np.sum(
+            joint_prob[joint_prob > 0] * np.log(joint_prob[joint_prob > 0] /
+                                                (marginal_prob1[np.newaxis, :] *
+                                                 marginal_prob2[:, np.newaxis])[joint_prob > 0]))
+        return mutual_information
+
+    elif metric == "correlation":
+        correlation = np.corrcoef(image1_array.ravel(),image2_array.ravel())[0, 1]
+        return correlation
+
+    else:
+        raise ValueError(f"Unsupported metric: {metric}")
+
+
+
+
+def perform_linear_coregistration(floating_image, reference_image, ref_mask_, float_mask, outputs, config,
+                                  inaff=None, use_landmarks=True):
+    proces_folder = Path(floating_image).parent
+    out_file = Path(outputs[0])
+    # landmark generation
+    landmark_file = proces_folder / "landmarks.pts"
+    from .mesh_algorithms import load_landmark_elastix,save_landmark_elastix
+    from .nets import PointNetRegressor
+    if use_landmarks:
+        pts = PointNetRegressor.landmark_point_generation(ref_mask_,   config.control_points_model)
+        save_landmark_elastix(landmark_file, pts)
+        fix_pts_np = load_landmark_elastix(config.ref_landmarks)
+        mov_pts_np = load_landmark_elastix(landmark_file)
+        # write alignment script
+
+        aff_mat = compute_affine_transformation(mov_pts_np, fix_pts_np)
+    else:
+        aff_mat = np.eye(4)
+    np.savetxt(proces_folder / "rigid_head.txt", aff_mat)
+    update_image_affine(floating_image, output_head=out_file, affine_matrix=aff_mat)
+    update_image_affine(float_mask, output_head=proces_folder / "coregistered_mask.nii.gz",
+                        affine_matrix=aff_mat, copy=False, copy_im=floating_image)
+    if Path(float_mask).name == "coregistered_mask.nii.gz":
+        print("Mask is already coregistered")
+    # sys.exit(-2)
+    # linear coregistration
+    register_flip(floating_image, reference_image, ref_mask=ref_mask_, float_mask=float_mask, outputs=outputs,
+                  inaff=inaff)
+    metric = measure_coregistration_metric(outputs[0], reference_image, metric="correlation")
+    return metric
+
+def register_flip(floating_image: Union[str, Path],
+                  reference_image: Union[str, Path], float_mask: Union[str, Path],
+                  ref_mask: Union[str, Path],
+                  outputs: Tuple[str, str],
+                  inaff=None):
+    """
+
+    :param floating_image:
+    :param reference_image:
+    :param float_mask:
+    :param ref_mask:
+    :param outputs:
+    :param inaff:
+    :return:
+    """
+    if inaff is None:
+        # cmd = ['reg_aladin', '-ref',
+        #        str(reference_image), '-rmask', ref_mask,
+        #        '-flo', floating_image, '-fmask', float_mask,
+        #        '-speeeed', '-cog', '-res', str(outputs[0]), '-aff', str(outputs[1])]
+        cmd = "reg_aladin -ref '{refim}' -rmask '{rmask}' -flo '{flim}' -fmask '{fmask}'".format(refim=reference_image,
+            rmask=ref_mask,flim=floating_image,fmask=float_mask)
+        cmd += " -speeeeed -cog -res '" + str(outputs[0])
+        cmd += "' -aff '" + outputs[1] + "'"
+        print(cmd)
+        subprocess.run(cmd, shell=True)
+        #shell(cmd)
+
+def non_rigid_registration(flo_im: str, ref_im: str, out_transform: str, out_image: str, param_file: str):
+    # Reading
+    fold = Path(out_image).parent
+    cmd = f"elastix -f '{ref_im}' -m '{flo_im}' -p '{param_file}' -out '{str(fold)}'"
+    shell(cmd)
+    shell(f"mv -f '{str(fold / 'result.0.nii.gz')}' '{out_image}'")
+    shell(f"mv -f '{str(fold / 'TransformParameters.0.txt')}' '{out_transform}'")
