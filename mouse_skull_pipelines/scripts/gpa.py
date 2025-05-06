@@ -5,6 +5,7 @@ import numpy as np
 from tqdm.auto import tqdm
 #from concurrent.futures import ProcessPoolExecutor
 from procrustes import generic
+import vtk
 
 from mouse_skull_pipelines.scripts.mesh_algorithms import read_mesh_from_file
 
@@ -68,7 +69,7 @@ def gpa(meshes: Dict[str, np.ndarray], max_iterations=100, threshold=1e-14):
     return reference_mesh, aligned_meshes, result_shapes
 
 
-def gpa_new(meshes: Dict[str, Path]):
+def gpa_new(meshes: Dict[str, Path],modes: str = "similarity"):
     """
     Perform Generalized Procrustes Analysis (GPA) on a set of meshes.
     Args:
@@ -77,22 +78,66 @@ def gpa_new(meshes: Dict[str, Path]):
 
     """
     # reading meshes
-    keys = list(meshes.keys())[0]
+    keys = list(meshes.keys())
 
     input_list = vtk.vtkMultiBlockDataSet()
+    print(meshes.keys())
     for i, f in enumerate(keys):
         pd = read_mesh_from_file(meshes[f])
         input_list.SetBlock(i, pd)
     procrustes = vtk.vtkProcrustesAlignmentFilter()
+
     procrustes.SetInputData(input_list)
-    procrustes.GetLandmarkTransform().SetModeToSimilarity()
+    if modes == "similarity":
+        procrustes.GetLandmarkTransform().SetModeToSimilarity()
+    elif modes == "rigid":
+        procrustes.GetLandmarkTransform().SetModeToRigidBody()
+    elif modes == "affine":
+        procrustes.GetLandmarkTransform().SetModeToAffine()
+    else:
+        raise ValueError("Unknown mode. Use 'similarity', 'rigid', or 'affine'.")
     procrustes.Update()
 
     aligned_output = procrustes.GetOutput()
+    print(list(enumerate(meshes.keys())))
     aligned_meshes = {
-        meshes[key]: (aligned_output.GetBlock(i) )for i, key in enumerate(meshes.keys())
+        key: (aligned_output.GetBlock(i) )for i, key in enumerate(meshes.keys())
     }
     return aligned_meshes
+
+
+def compute_mean_mesh( meshes: Dict[str, vtk.vtkPolyData]):
+    """
+    Compute the mean mesh from a list of meshes.
+    Args:
+        meshes: A dictionary where keys are mesh names and values are vtkPolyData objects.
+    Returns:
+        A vtkPolyData object representing the mean mesh.
+    """
+    mesh_list = list(meshes.values())
+    n_points = mesh_list[0].GetNumberOfPoints()
+    n_meshes = len(mesh_list)
+
+    # Суммируем координаты всех точек
+    sum_points = np.zeros((n_points, 3), dtype=np.float64)
+    for mesh in mesh_list:
+        for i in range(n_points):
+            sum_points[i] += np.array(mesh.GetPoint(i))
+
+    mean_points = sum_points / n_meshes
+
+    # Создаём новый PolyData с теми же ячейками, но средними точками
+    mean_polydata = vtk.vtkPolyData()
+    vtk_points = vtk.vtkPoints()
+    for pt in mean_points:
+        vtk_points.InsertNextPoint(pt.tolist())
+    mean_polydata.SetPoints(vtk_points)
+    mean_polydata.SetPolys(mesh_list[0].GetPolys())  # копируем faces из первого меша
+    return mean_polydata
+
+
+
+
 
 
 

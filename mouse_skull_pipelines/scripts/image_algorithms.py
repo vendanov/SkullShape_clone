@@ -2,7 +2,7 @@ import subprocess
 from dataclasses import dataclass
 from typing import Union, Tuple
 
-import PIL
+import PIL.Image as pim
 import vtk
 import numpy as np
 from pathlib import Path
@@ -324,12 +324,12 @@ def generate_projection_image(input_image: sitk.Image, axis=1):
 
     return projection_image_2d
 
-def convert_2d_to_PIL(image: np.ndarray) -> PIL.Image:
+def convert_2d_to_PIL(image: np.ndarray) -> pim:
 
     flo_proj_im = image
     flo_proj_im = (flo_proj_im - np.min(flo_proj_im)) / (np.max(flo_proj_im) - np.min(flo_proj_im))  # Normalize to 0-1
     flo_proj_im = (flo_proj_im * 255).astype(np.uint8)  # Convert to 8-bit integer
-    flo_proj_im = PIL.Image.fromarray(flo_proj_im)
+    flo_proj_im = pim.fromarray(flo_proj_im)
     return flo_proj_im
 
 
@@ -417,11 +417,13 @@ def register_linear_full(floating_image: Union[str, Path],
     res_mask_path = process_folder / "coregistered_mask.nii.gz"
     if config.is_simple:
 
-        perform_linear_coregistration(floating_image, reference_image, config.ref_landmarks, ref_mask, float_mask, outputs, config, inaff, use_landmarks=False)
-        return
+        metric = perform_linear_coregistration(
+            floating_image=floating_image, reference_image= reference_image,
+            ref_mask_=ref_mask,
+            float_mask=float_mask,outputs= outputs, config= config, inaff=inaff, use_landmarks=False)
+        return metric
 
-    if coalign_roi_based(
-        reference_image,floating_image,
+    if coalign_roi_based(reference_image,floating_image,
         ref_rois=config['side_ref_xml'],model_path=config['side_model'],mask_path=float_mask,
         res_path=outputs[0],
         res_mask_path=res_mask_path,out_im_name='axis_0.png',axis=0) is not None:
@@ -550,7 +552,8 @@ def measure_coregistration_metric(image_path1, image_path2, metric="correlation"
 
 
 
-def perform_linear_coregistration(floating_image, reference_image, ref_mask_, float_mask, outputs, config,
+def perform_linear_coregistration(floating_image, reference_image,
+                                  ref_mask_, float_mask, outputs, config,
                                   inaff=None, use_landmarks=True):
     proces_folder = Path(floating_image).parent
     out_file = Path(outputs[0])
@@ -564,14 +567,22 @@ def perform_linear_coregistration(floating_image, reference_image, ref_mask_, fl
         fix_pts_np = load_landmark_elastix(config.ref_landmarks)
         mov_pts_np = load_landmark_elastix(landmark_file)
         # write alignment script
-
         aff_mat = compute_affine_transformation(mov_pts_np, fix_pts_np)
+        update_image_affine(floating_image, output_head=out_file, affine_matrix=aff_mat)
+        update_image_affine(float_mask, output_head=proces_folder / "coregistered_mask.nii.gz",
+                            affine_matrix=aff_mat, copy=False, copy_im=floating_image)
     else:
         aff_mat = np.eye(4)
+        def copy_image(inp, out):
+            subprocess.run(f"cp {inp} {out}", shell=True)
+        copy_image(floating_image, out_file)
+        copy_image(float_mask, str(proces_folder / "coregistered_mask.nii.gz"))
+        # update_image_affine(floating_image, output_head=out_file, affine_matrix=aff_mat)
+        # update_image_affine(float_mask, output_head=proces_folder / "coregistered_mask.nii.gz",
+        #                     affine_matrix=aff_mat, copy=True, copy_im=floating_image)
+
     np.savetxt(proces_folder / "rigid_head.txt", aff_mat)
-    update_image_affine(floating_image, output_head=out_file, affine_matrix=aff_mat)
-    update_image_affine(float_mask, output_head=proces_folder / "coregistered_mask.nii.gz",
-                        affine_matrix=aff_mat, copy=False, copy_im=floating_image)
+
     if Path(float_mask).name == "coregistered_mask.nii.gz":
         print("Mask is already coregistered")
     # sys.exit(-2)
@@ -580,6 +591,31 @@ def perform_linear_coregistration(floating_image, reference_image, ref_mask_, fl
                   inaff=inaff)
     metric = measure_coregistration_metric(outputs[0], reference_image, metric="correlation")
     return metric
+
+
+
+def otsu_treshold(input_file: Path, out_file: Path, origin_copy=None):
+    # Load image
+    img = sitk.ReadImage(input_file)
+
+    # Apply Otsu thresholding
+    otsu_filter = sitk.OtsuThresholdImageFilter()
+    otsu_filter.SetInsideValue(0)
+    otsu_filter.SetOutsideValue(1)
+    otsu_img = otsu_filter.Execute(img)
+    if origin_copy is not None:
+        orcp = sitk.ReadImage(origin_copy)
+        otsu_img.SetOrigin(orcp.GetOrigin())
+        otsu_img.SetSpacing(orcp.GetSpacing())
+        otsu_img.SetDirection(orcp.GetDirection())
+    else:
+        otsu_img.SetOrigin(img.GetOrigin())
+        otsu_img.SetSpacing(img.GetSpacing())
+        otsu_img.SetDirection(img.GetDirection())
+
+    # Save thresholded image
+    sitk.WriteImage(otsu_img,out_file)
+
 
 def register_flip(floating_image: Union[str, Path],
                   reference_image: Union[str, Path], float_mask: Union[str, Path],
@@ -611,6 +647,9 @@ def register_flip(floating_image: Union[str, Path],
 
 def non_rigid_registration(flo_im: str, ref_im: str, out_transform: str, out_image: str, param_file: str):
     # Reading
+    def shell(cmd: str):
+        subprocess.run(cmd, shell=True, check=True)
+
     fold = Path(out_image).parent
     cmd = f"elastix -f '{ref_im}' -m '{flo_im}' -p '{param_file}' -out '{str(fold)}'"
     shell(cmd)

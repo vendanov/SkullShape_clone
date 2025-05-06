@@ -1,5 +1,7 @@
-import numpy as np
+import sys
 
+import numpy as np
+import SimpleITK as sitk
 from mouse_skull_pipelines.scripts.image_algorithms import register_linear_full, non_rigid_registration, \
     LinearRegistrationConfig, otsu_treshold
 
@@ -64,6 +66,93 @@ rule otsu_threshold:
         Path(output.flag).touch(exist_ok=True)
 
 
+
+def flip_image_and_correct_affine(input_path: str, output_path: str):
+    # Чтение изображения
+    img = sitk.ReadImage(input_path)
+    arr = sitk.GetArrayFromImage(img)  # (z,y,x) порядок в sitk
+    spacing = img.GetSpacing()
+    origin = list(img.GetOrigin())
+    direction = np.array(img.GetDirection()).reshape(3,3)
+
+    # Флип по x (axis=2) и y (axis=1)
+    flipped_arr = np.flip(arr, axis=(1,2))  # flip y and x
+
+    # Меняем Origin
+    size = img.GetSize()
+    origin[0] = origin[0] + spacing[0] * (size[0] - 1)
+    origin[1] = origin[1] + spacing[1] * (size[1] - 1)
+
+    # Меняем Direction (разворачиваем оси)
+    direction[0,0] *= -1
+    direction[1,1] *= -1
+
+    # Создаем новое изображение
+    flipped_img = sitk.GetImageFromArray(flipped_arr)
+    flipped_img.SetSpacing(spacing)
+    flipped_img.SetOrigin(origin)
+    flipped_img.SetDirection(direction.flatten())
+
+    # Сохраняем
+    sitk.WriteImage(flipped_img, output_path)
+
+def hard_flip(input_path: str, output_path: str):
+    img = sitk.ReadImage(input_path)
+    arr = sitk.GetArrayFromImage(img)  # (z,y,x)
+
+    # Просто флип данных (без изменения метаданных)
+    flipped_arr = np.flip(arr, axis=(1, 2))  # flip y and x
+
+    # Создать новое изображение с теми же origin, spacing, direction
+    flipped_img = sitk.GetImageFromArray(flipped_arr)
+    flipped_img.SetSpacing(img.GetSpacing())
+    flipped_img.SetOrigin(img.GetOrigin())
+    flipped_img.SetDirection(img.GetDirection())
+
+    sitk.WriteImage(flipped_img, output_path)
+
+
+def flip_image(input_path: str, output_path: str, axes=(False, False, False), correct_affine=True):
+    """
+    Flip an image along specified axes.
+
+    Args:
+        input_path: Path to input .nii/.mha/.nrrd image.
+        output_path: Where to save flipped image.
+        axes: Tuple of booleans (flip_x, flip_y, flip_z), axis in physical space.
+        correct_affine: If True, updates origin and direction accordingly.
+    """
+    img = sitk.ReadImage(input_path)
+    arr = sitk.GetArrayFromImage(img)  # (z, y, x)
+
+    flip_axes = [i for i, flip in enumerate(axes[::-1]) if flip]  # numpy axes (x=2, y=1, z=0)
+
+    # Flip voxel data
+    flipped_arr = np.flip(arr,axis=flip_axes) if flip_axes else arr.copy()
+
+    # Create new image
+    flipped_img = sitk.GetImageFromArray(flipped_arr)
+    flipped_img.SetSpacing(img.GetSpacing())
+
+    if correct_affine:
+        spacing = img.GetSpacing()
+        origin = list(img.GetOrigin())
+        direction = np.array(img.GetDirection()).reshape(3,3)
+        size = img.GetSize()
+
+        for i, flip in enumerate(axes):  # i: 0=z, 1=y, 2=x
+            if flip:
+                origin[i] += spacing[i] * (size[i] - 1)
+                direction[:, i] *= -1
+
+        flipped_img.SetOrigin(origin)
+        flipped_img.SetDirection(direction.flatten())
+    else:
+        flipped_img.SetOrigin(img.GetOrigin())
+        flipped_img.SetDirection(img.GetDirection())
+
+    sitk.WriteImage(flipped_img,output_path)
+
 rule linear_coregistration:
     input: PROCESS_DIR / "{subject}"/ ct_im_name,
         (PROCESS_DIR / "{subject}/1_otsu.flag")
@@ -84,17 +173,40 @@ rule linear_coregistration:
         Path(str(params.out_affine)).unlink(missing_ok=True)
 
         in_ct = Path(input[0])
+        out_mask = process_folder / "coregistered_mask.nii.gz"
 
 
         config : LinearRegistrationConfig  = LinearRegistrationConfig(is_simple=LINEAR_SIMPLE,
             ref_landmarks=None,
             side_landmarks_model=None,control_points_model=None)
-        register_linear_full(str(in_ct),str(ref_im),
+        metric = register_linear_full(str(in_ct),str(ref_im),
             str(params.in_mask),ref_mask=str(ref_mask),
             config=config,
 
 
             outputs=(str(params.out_head), str(process_folder / 'TransformParameters.0.txt')))
+        print("metric!",metric)
+        if metric < 0.5:
+            print("linear registration failed")
+            flip_image(str(in_ct), str(params.out_head), axes=(False, True, True), correct_affine=False)
+            flip_image(str(params.in_mask), str(out_mask), axes=(False, True, True), correct_affine=False)
+            metric = register_linear_full(str(params.out_head),str(ref_im),
+                str(out_mask),ref_mask=str(ref_mask),
+                config=config,
+                outputs=(str(params.out_head), str(process_folder / 'TransformParameters.0.txt')))
+            print("metric_3",metric)
+        if metric < 0.5:
+            # flip image and mask
+            hard_flip(str(in_ct), str(params.out_head))
+            hard_flip(str(params.in_mask), str(out_mask))
+            metric = register_linear_full(str(params.out_head),str(ref_im),
+                str(out_mask),ref_mask=str(ref_mask),
+                config=config,
+                outputs=(str(params.out_head), str(process_folder / 'TransformParameters.0.txt')))
+
+            print("metric_2",metric)
+
+
 
         aff_mat = np.loadtxt(process_folder / 'rigid_head.txt')
         # read the affine matrix from the file
