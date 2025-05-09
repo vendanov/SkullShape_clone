@@ -165,7 +165,7 @@ rule linear_coregistration:
         out_mat=lambda wildcards: PROCESS_DIR / f"{wildcards.subject}/rigid_head.txt",
         out_affine=lambda wildcards: PROCESS_DIR / f"{wildcards.subject}/affine_head.txt"
 
-    threads: 2
+    threads: 1
     run:
         process_folder = Path(output[0]).parent
         Path(str(params.out_head)).unlink(missing_ok=True)

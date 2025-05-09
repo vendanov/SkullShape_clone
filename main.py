@@ -19,6 +19,23 @@ from sympy.physics.quantum.identitysearch import scipy
 
 from mouse_skull_pipelines.scripts.gpa import gpa_new, compute_mean_mesh
 
+def clean_after_registration(cohort_folder: Path):
+    """
+    Clean the cohort folder after registration.
+    """
+
+    files_to_leave = ["head_affine_registered.obj", "4_inv_mesh.flag","ct_image.nii.gz",
+                      "nl_transformation_params.txt" , "affine_head.txt"
+                      ]
+
+    # itearate over the files in the cohort folder and subfolders
+    for root, dirs, files in os.walk(cohort_folder):
+        for file in files:
+            # if the file is not in the list of files to leave, remove it
+            if file not in files_to_leave:
+                file_path = os.path.join(root, file)
+                print(f"Removing {file_path}")
+                #os.remove(file_path)
 
 def registration_to_reference(cohort_folder: Path, reference_mouse):
 
@@ -45,19 +62,29 @@ def registration_to_reference(cohort_folder: Path, reference_mouse):
 
         # save the temporary config file
         with tempfile.NamedTemporaryFile(delete=False, suffix='.yaml') as temp_file:
-            temp_file.write(yaml.dump(config).encode())
-            temp_file.close()
-            temp_file_path = temp_file.name
-            print(f"Temporary config file created at: {temp_file_path}")
-            # run the temporary config file registration
-            # run the registration
-            snakemake_command = f"snakemake --snakefile {script_home} --configfile {temp_file_path} --cores 10"
 
-            cmd = snakemake_command.split()
-            subprocess.run(cmd, check=True)
+            try:
+                temp_file.write(yaml.dump(config).encode())
+                temp_file.close()
+                temp_file_path = temp_file.name
+                print(f"Temporary config file created at: {temp_file_path}")
+                # run the temporary config file registration
+                # run the registration
+                snakemake_command = f"snakemake --snakefile {script_home} --configfile {temp_file_path} --cores 10"
+                cmd = snakemake_command.split()
+                subprocess.run(cmd, check=True)
+                clean_after_registration(cohort_folder)
+            except Exception as e:
+                print(f"Error during registration: {e}")
+                print("Please check the config file and the cohort folder.")
+            finally:
+                # remove the temporary config file
+                temp_file.close()
+                os.remove(temp_file.name)
 
             # remove the temporary config file
-            os.remove(temp_file_path)
+            #os.remove(temp_file_path)
+
 
 
 def compute_2cohort_differences(cohort_1: Dict[str, vtk.vtkPolyData], cohort_2: Dict[str, vtk.vtkPolyData]):
@@ -533,13 +560,6 @@ def main():
         if not result_dir.exists():
             os.makedirs(result_dir)
         one_cohort_statistics(args.cohort, args.reference_mouse, result_dir)
-
-
-
-
-
-
-
 
 
 if __name__ == "__main__":
