@@ -825,6 +825,26 @@ def remove_old_1176_head_scans_folders(path : Path):
                 shutil.rmtree(fold)
 
 
+def remove_masks( path : Path):
+    masks = list(Path(path).glob("*_mask"))
+    for mask in masks:
+        if mask.is_dir():
+            shutil.rmtree(mask)
+
+    masks = list(Path(path).glob("*_mask_edited"))
+    for mask in masks:
+        if mask.is_dir():
+            shutil.rmtree(mask)
+
+
+    masks = list(Path(path).glob("*_predictions"))
+    for mask in masks:
+        if mask.is_dir():
+            shutil.rmtree(mask)
+
+
+
+
 
 print('############## Processing of scanner 1176 ###########')
 ########################################################################################################## Part 1 for 1176: function to predict the head slice ############################################
@@ -899,8 +919,15 @@ for path in df_cohort_1278['PATH']:
             os.mkdir(cohort_folder + '/' + 'BMD_TMD')
         TMD_BMD_1278(path, cohort_folder)
         end = time.time()
+
         print("function TMD_BMD_1278 ############################This step took " + str(
             end - init) + " seconds###########################")
+
+        # remove masks as soon as we have BMD and TMD
+        remove_masks(Path(path))
+
+        print("REMOVAL OF MASKS DONE")
+
     except Exception as e:
         print("error on path ", path)
         print(e)
@@ -908,8 +935,6 @@ for path in df_cohort_1278['PATH']:
 
 ###### save dxa
 print("SAVING DXA FILES")
-
-
 
 all_files = glob.glob(os.path.join(cohort_folder + '/' + 'BMD_TMD', "*.csv"))  ################# CHANGE HERE
 df_from_each_file = (pd.read_csv(f, sep=',', header=0) for f in all_files)

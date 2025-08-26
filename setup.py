@@ -10,7 +10,7 @@ def read_long_description():
 def find_project_packages():
     return find_packages(
         where='.',
-        exclude=(
+        exclude=[
             'tests',
             'notebooks',
             'runner_scripts',
@@ -20,14 +20,9 @@ def find_project_packages():
             'models',
             'support',
             'external_libraries',
-            '__pycache__',
             'venv',
             'env',
-            '*.smk',
-            '*.yaml',
-            '*.ipynb',
-            '*.csv',
-        )
+        ]
     )
 
 setup(
@@ -39,7 +34,7 @@ setup(
     long_description=read_long_description(),
     long_description_content_type='text/markdown',
     url='https://github.com/yourusername/mouseSkullPipelines',  # Replace with your project's URL
-    packages=find_project_packages(),
+    packages=find_packages(include=['mouse_skull_pipelines', 'mouse_skull_pipelines.*']),
     include_package_data=True,  # Include non-Python files specified in MANIFEST.in
     install_requires=[
         'numpy',

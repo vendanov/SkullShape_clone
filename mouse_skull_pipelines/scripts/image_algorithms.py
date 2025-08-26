@@ -623,7 +623,6 @@ def register_flip(floating_image: Union[str, Path],
                   outputs: Tuple[str, str],
                   inaff=None):
     """
-
     :param floating_image:
     :param reference_image:
     :param float_mask:

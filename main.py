@@ -4,7 +4,7 @@ import os
 import shutil
 import subprocess
 import sys
-from typing import Dict
+from typing import Dict, Optional
 import scipy.io as scio
 import numpy as np
 import vtk
@@ -35,7 +35,7 @@ def clean_after_registration(cohort_folder: Path):
             if file not in files_to_leave:
                 file_path = os.path.join(root, file)
                 print(f"Removing {file_path}")
-                #os.remove(file_path)
+                os.remove(file_path)
 
 def registration_to_reference(cohort_folder: Path, reference_mouse):
 
@@ -70,10 +70,10 @@ def registration_to_reference(cohort_folder: Path, reference_mouse):
                 print(f"Temporary config file created at: {temp_file_path}")
                 # run the temporary config file registration
                 # run the registration
-                snakemake_command = f"snakemake --snakefile {script_home} --configfile {temp_file_path} --cores 10"
+                snakemake_command = f"snakemake --snakefile {script_home} --configfile {temp_file_path} --cores 9  --keep-going"
                 cmd = snakemake_command.split()
                 subprocess.run(cmd, check=True)
-                clean_after_registration(cohort_folder)
+                #clean_after_registration(cohort_folder)
             except Exception as e:
                 print(f"Error during registration: {e}")
                 print("Please check the config file and the cohort folder.")
@@ -188,7 +188,7 @@ def produce_gif_coh_comparison(ref_mesh: vtk.vtkPolyData,
     trisurf.set_fc(cmap(norm(colors)))
 
     ax.set_box_aspect([np.ptp(i) for i in [ax.get_xlim(), ax.get_ylim(), ax.get_zlim()]])
-    ax.axis('off')
+    #ax.axis('off')
     sm = cm.ScalarMappable(cmap=cmap, norm=norm)
     sm.set_array([])
     cbar = plt.colorbar(sm, ax=ax, shrink=0.5, pad=0.1)
@@ -244,7 +244,7 @@ def produce_gif_ttest_comparison(ref_mesh: vtk.vtkPolyData,
     trisurf.set_fc(cmap(norm(colors)))
 
     ax.set_box_aspect([np.ptp(i) for i in [ax.get_xlim(), ax.get_ylim(), ax.get_zlim()]])
-    ax.axis('off')
+    #ax.axis('off')
     sm = cm.ScalarMappable(cmap=cmap, norm=norm)
     sm.set_array([])
     cbar = plt.colorbar(sm, ax=ax, shrink=0.5, pad=0.1)
@@ -298,7 +298,7 @@ def produce_gif_mean_diff(ref_mesh: vtk.vtkPolyData,
 
     # Настройка сцены
     ax.set_box_aspect([np.ptp(pts[:, 0]), np.ptp(pts[:, 1]), np.ptp(pts[:, 2])])
-    ax.axis('off')
+    #ax.axis('off')
 
     # Анимация вращения
     def animate(frame):
@@ -311,7 +311,8 @@ def produce_gif_mean_diff(ref_mesh: vtk.vtkPolyData,
 
 def uproduce_gif_std(ref_mesh: vtk.vtkPolyData,
                     std_results: list,
-                    output_gif_file: str):
+                    output_gif_file: str,
+                     upper_limit: Optional[float] = None):
 
     from matplotlib import cm, animation
     from mpl_toolkits.mplot3d import Axes3D
@@ -324,7 +325,11 @@ def uproduce_gif_std(ref_mesh: vtk.vtkPolyData,
     # Обрезаем: всё выше 95-го → приравниваем к 95-му
     std_norms_clipped = np.clip(std_norms, a_min=None, a_max=p95)
     cmap = cm.get_cmap('viridis')
-    norm = plt.Normalize(vmin=face_colors.min(), vmax=face_colors.max())
+    if upper_limit is not None:
+        norm = plt.Normalize(vmin=0, vmax=upper_limit)
+    else:
+        norm = plt.Normalize(vmin=0, vmax=face_colors.max())
+
     # Создаём фигуру и ось
 
     fig = plt.figure(figsize=(8, 6), dpi=300)
@@ -340,7 +345,7 @@ def uproduce_gif_std(ref_mesh: vtk.vtkPolyData,
     plt.colorbar(sm, ax=ax)
     # Настройка сцены
     ax.set_box_aspect([np.ptp(pts[:, 0]), np.ptp(pts[:, 1]), np.ptp(pts[:, 2])])
-    ax.axis('off')
+    #ax.axis('off')
     # Анимация вращения
     def animate(frame):
         ax.view_init(elev=20, azim=frame * 36)
@@ -444,16 +449,19 @@ def compare_cohorts(cohort_1: str, cohort_2: str, reference_mouse: str, result_d
 
     mesh_file = next(iter(coh_1_meshes.values()))
 
-    produce_gif_mean_diff(mesh_file, ks_results['mean_diff'], result_dir / "mean_diff.gif")
+    coh_1_name = cohort_1.name
+    coh_2_name = cohort_2.name
 
-    produce_gif_coh_comparison(mesh_file, ks_results['ks'], result_dir / "cohort_comparison.gif")
-    produce_gif_ttest_comparison(mesh_file,ks_results['t_test'], result_dir / "ttest_comparison.gif")
+    produce_gif_mean_diff(mesh_file, ks_results['mean_diff'], result_dir / f"mean_diff_{coh_1_name}_{coh_2_name}.gif")
+
+    produce_gif_coh_comparison(mesh_file, ks_results['ks'], result_dir / f"cohort_comparison_{coh_1_name}_{coh_2_name}.gif")
+    produce_gif_ttest_comparison(mesh_file,ks_results['t_test'], result_dir / f"ttest_comparison_{coh_1_name}_{coh_2_name}.gif")
 
 
 
 
 
-def one_cohort_statistics(cohort: str, reference_mouse: str, result_dir: str):
+def one_cohort_statistics(cohort: str, reference_mouse: str, result_dir: str,upper_limit: Optional[float] = None):
     """
     Compute the statistics for one cohort of mice and save the results to a file.
     """
@@ -469,7 +477,7 @@ def one_cohort_statistics(cohort: str, reference_mouse: str, result_dir: str):
 
     cohort_meshes = { x.name : x/"head_affine_registered.obj" for x in Path(cohort).iterdir()  if (x/"head_affine_registered.obj").exists() }
 
-    compute_and_save_mean_mesh(cohort_meshes, result_dir / "cohort_mean.obj")
+    #compute_and_save_mean_mesh(cohort_meshes, result_dir / "cohort_mean.obj")
 
     print(f"Number of meshes in cohort: {len(cohort_meshes)}")
     coh_aligned = gpa_new(cohort_meshes, modes="rigid")
@@ -484,7 +492,7 @@ def one_cohort_statistics(cohort: str, reference_mouse: str, result_dir: str):
     mesh_file = next(iter(coh_aligned.values()))
     # plot results
 
-    uproduce_gif_std(mesh_file,std_results, result_dir / "cohort_std.gif")
+    uproduce_gif_std(mesh_file,std_results, result_dir / f"{cohort.name}_std.gif", upper_limit=upper_limit)
 
 
 
@@ -540,6 +548,17 @@ def main():
         required=True,
         help="Path to the result folder.",
     )
+    self_aver_parser.add_argument(
+        "--upper_limit",
+        type=float,
+        default=None,
+        required=False,
+        help="Path to the result file.",
+    )
+
+    self_aver_parser.add_argument("--save_statics",
+                                      action="store_true",
+                                      help="Save the statistics to a file.")
 
 
 
@@ -559,7 +578,7 @@ def main():
         result_dir = Path(args.result_dir)
         if not result_dir.exists():
             os.makedirs(result_dir)
-        one_cohort_statistics(args.cohort, args.reference_mouse, result_dir)
+        one_cohort_statistics(args.cohort, args.reference_mouse, result_dir,upper_limit=args.upper_limit)
 
 
 if __name__ == "__main__":

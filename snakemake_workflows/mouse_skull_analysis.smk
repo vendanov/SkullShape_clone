@@ -1,7 +1,6 @@
 import os
 import pickle
-import shlex
-import subprocess
+
 from builtins import all
 
 import PIL
@@ -236,7 +235,7 @@ rule all:
     input:
         (PROCESS_DIR / "logs_skull.txt")
 
-    # expand(OUT_FOLD / "{subject}" / '2_lin_cor.flag',subject=SRC_SUBJECTS)
+#(PROCESS_DIR / "logs_skull.txt")
 
 
 def extract_labels(xml_file: str):
@@ -460,51 +459,12 @@ def register_flip(floating_image: Union[str, Path],
 def landmark_point_generation(input_file: str, output_file: str):
     net = PointNetRegressor(1000,9)
     net.load_state_dict(torch.load(control_points_model))
-    net.eval()
+    with torch.no_grad():
+        net.eval()
 
-    pts = net.compute_from_image(input_file)
+        pts = net.compute_from_image(input_file)
 
-    save_landmark_elastix(output_file,pts)
-
-
-def measure_coregistration_metric(image_path1, image_path2, metric="correlation"):
-    """
-    Measure coregistration metric between two images.
-
-    Parameters:
-        image_path1 (str): Path to the first image.
-        image_path2 (str): Path to the second image.
-        metric (str): Metric to evaluate. Options: "mutual_information", "correlation".
-
-    Returns:
-        float: Metric value representing similarity between the images.
-    """
-    # Load the images
-    image1 = sitk.ReadImage(image_path1,sitk.sitkFloat32)
-    image2 = sitk.ReadImage(image_path2,sitk.sitkFloat32)
-
-    # Convert images to numpy arrays
-    image1_array = sitk.GetArrayFromImage(image1)
-    image2_array = sitk.GetArrayFromImage(image2)
-
-    # Compute the metric
-    if metric == "mutual_information":
-        joint_histogram, _, _ = np.histogram2d(image1_array.ravel(),image2_array.ravel(),bins=32)
-        joint_prob = joint_histogram / np.sum(joint_histogram)
-        marginal_prob1 = np.sum(joint_prob,axis=0)
-        marginal_prob2 = np.sum(joint_prob,axis=1)
-        mutual_information = np.sum(
-            joint_prob[joint_prob > 0] * np.log(joint_prob[joint_prob > 0] /
-                                                (marginal_prob1[np.newaxis, :] *
-                                                 marginal_prob2[:, np.newaxis])[joint_prob > 0]))
-        return mutual_information
-
-    elif metric == "correlation":
-        correlation = np.corrcoef(image1_array.ravel(),image2_array.ravel())[0, 1]
-        return correlation
-
-    else:
-        raise ValueError(f"Unsupported metric: {metric}")
+        save_landmark_elastix(output_file,pts)
 
 
 def perform_linear_coregistration(floating_image, reference_image, ref_landmarks_, ref_mask_, float_mask, outputs, inaff=None, use_landmarks=True):
@@ -1583,54 +1543,7 @@ rule otsu_threshold:
 #
 #         save_landmark_elastix(params.out_landmarks,pts)
 
-def compute_affine_transformation(a_points, b_points):
-    """
-    Compute the affine transformation matrix that maps a_points to b_points.
 
-    Parameters:
-    - a_points: List or array of three source points (3x3 matrix).
-    - b_points: List or array of three destination points (3x3 matrix).
-
-    Returns:
-    - A 4x4 homogeneous transformation matrix.
-    """
-    a_points = np.array(a_points)
-    b_points = np.array(b_points)
-
-    # Compute centroids
-    centroid_a = np.mean(a_points,axis=0)
-    centroid_b = np.mean(b_points,axis=0)
-
-    # Subtract centroids to center the points
-    a_centered = a_points - centroid_a
-    b_centered = b_points - centroid_b
-
-    # Compute covariance matrix
-    H = a_centered.T @ b_centered
-
-    # Singular Value Decomposition
-    U, S, Vt = np.linalg.svd(H)
-
-    # Compute rotation matrix
-    R = Vt.T @ U.T
-
-    # Special reflection case
-    if np.linalg.det(R) < 0:
-        print("Reflection detected, adjusting for proper rotation.")
-        Vt[2, :] *= -1
-        R = Vt.T @ U.T
-
-    # Compute translation vector
-    t = centroid_b - R @ centroid_a
-
-    # Construct homogeneous transformation matrix
-    homogeneous_matrix = np.identity(4)
-    homogeneous_matrix[:3, :3] = R
-    homogeneous_matrix[:3, 3] = t
-
-    print("Hom matrix",homogeneous_matrix)
-
-    return homogeneous_matrix
 
 
 def transform_points(points, T):
@@ -1930,6 +1843,8 @@ rule general_procrustes:
             # read normal points
             cohorts = read_coh_file()
             subject_gender = Path(output[0]).parent.name.split("_")[1]
+            # remove second letter from subject_gender
+            # subject_gender = subject_gender[:1] + subject_gender[2:]
             ref_mesh, _, _ = gpa(cohorts[subject_gender])
 
             _, distance, _ = procreustes_alignment(ref_mesh,ref_mesh_pts)

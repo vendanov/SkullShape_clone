@@ -198,7 +198,7 @@ def generate_orienter(fixed_image,moving_image):
     registration_method.SetInterpolator(sitk.sitkLinear)
     registration_method.SetMetricAsCorrelation()
 
-    registration_method.SetOptimizerAsExhaustive(numberOfSteps=[4, 4, 0, 0, 0, 0],stepLength=np.pi / 4)
+    registration_method.SetOptimizerAsExhaustive(numberOfSteps=[2, 2, 2, 0, 0, 0],stepLength=np.pi / 4)
     registration_method.SetOptimizerScales([1, 1, 1, 1, 1, 1])
     # Don't optimize in-place, we would possibly like to run this cell multiple times.
     registration_method.SetInitialTransform(initial_transform)
@@ -335,7 +335,8 @@ def replace_points_in_mesh(out_name: str, mesh_ref_space: str,
 
 rule all:
     input:
-        expand("{dirname}/result_affine.mat" ,dirname=MICE_FOLDERS)
+        expand("{dirname"
+               "}/result_affine.mat" ,dirname=MICE_FOLDERS)
 
 
 rule otsu_threshold:

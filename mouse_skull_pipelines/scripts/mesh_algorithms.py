@@ -4,7 +4,7 @@ import vtk
 import numpy as np
 from pathlib import Path
 import torch
-from pytorch3d.ops import sample_farthest_points
+#from pytorch3d.ops import sample_farthest_points
 
 
 # Algorithms for image processing using VTK and NumPy
@@ -38,9 +38,7 @@ def read_mesh_from_file(mesh_file: Union[str, Path]):
     Read a mesh from a file using VTK.
     Args:
         mesh_file:
-
     Returns:
-
     """
     reader = vtk.vtkOBJReader()
     reader.SetFileName(str(mesh_file))
@@ -78,7 +76,6 @@ def load_landmark_elastix(filename, coordinate_system='LPS'):
     Args:
         filename:
         coordinate_system:
-
     Returns:
 
     """

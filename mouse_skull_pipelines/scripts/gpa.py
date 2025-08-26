@@ -138,10 +138,6 @@ def compute_mean_mesh( meshes: Dict[str, vtk.vtkPolyData]):
 
 
 
-
-
-
-
 def read_file(filename):
     f = open(filename,'rb')
     res =pickle.load(f)

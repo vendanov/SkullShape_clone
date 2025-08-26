@@ -267,7 +267,7 @@ rule non_rigid_registration_rule:
         out_nlim=lambda wildcards: PROCESS_DIR / f"{wildcards.subject}/nonlin_image.nii.gz",
         out_txt=lambda wildcards: PROCESS_DIR / f"{wildcards.subject}/nl_transformation_params.txt",
         inp_coregim=lambda wildcards: PROCESS_DIR / f"{wildcards.subject}/coregistered_head.nii.gz"
-    threads: 8
+    threads: 2
     run:
         # remove previous files
         Path(str(params.out_nlim)).unlink(missing_ok=True)
@@ -327,12 +327,6 @@ rule non_rigid_registration_rule:
         Path(output[0]).touch(exist_ok=True)
 
 
-
-
-            #print("fwdtransforms",reg['fwdtransforms'][i])
-
-
-        # remove src transform
 
 
 import ants
