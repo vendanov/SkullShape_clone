@@ -354,6 +354,49 @@ def uproduce_gif_std(ref_mesh: vtk.vtkPolyData,
     plt.close(fig)
 
 
+def produce_gif_scalar_map(ref_mesh: vtk.vtkPolyData,
+                           face_values: np.ndarray,
+                           output_gif_file: str,
+                           cmap_name: str = 'viridis',
+                           clip_percentile: Optional[float] = 95.0,
+                           colorbar_label: str = 'Value'):
+    from matplotlib import cm, animation
+    # Prepare points and faces
+    pts, faces = read_vtk_polydata_points_faces(ref_mesh)
+    values = np.asarray(face_values).astype(float)
+    if clip_percentile is not None:
+        vmax = np.percentile(values, clip_percentile)
+        values = np.clip(values, a_min=None, a_max=vmax)
+    else:
+        vmax = float(np.max(values))
+
+    vmin = float(np.min(values)) if np.isfinite(values).all() else 0.0
+    if vmax <= vmin:
+        vmax = vmin + 1e-6
+
+    fig = plt.figure(figsize=(8, 6), dpi=300)
+    ax = fig.add_subplot(111, projection='3d')
+    trisurf = ax.plot_trisurf(pts[:, 0], pts[:, 1], pts[:, 2],
+                              triangles=faces,
+                              linewidth=0.2,
+                              antialiased=True)
+    cmap = cm.get_cmap(cmap_name)
+    norm = plt.Normalize(vmin=vmin, vmax=vmax)
+    trisurf.set_facecolors(cmap(norm(values)))
+    sm = cm.ScalarMappable(norm=norm, cmap=cmap)
+    sm.set_array(values)
+    cbar = plt.colorbar(sm, ax=ax)
+    cbar.set_label(colorbar_label)
+    ax.set_box_aspect([np.ptp(pts[:, 0]), np.ptp(pts[:, 1]), np.ptp(pts[:, 2])])
+
+    def animate(frame):
+        ax.view_init(elev=20, azim=frame * 36)
+
+    from matplotlib import animation as _anim
+    ani = _anim.FuncAnimation(fig, animate, frames=10)
+    ani.save(output_gif_file, writer='pillow', fps=1)
+    plt.close(fig)
+
 def compute_and_save_mean_mesh(cohort: Dict[str, vtk.vtkPolyData], output_file: str):
     """
     Compute the mean mesh for the given cohort and save it to a file.
@@ -396,6 +439,117 @@ def compute_facewise_centroid_std(meshes: Dict[str, vtk.vtkPolyData]) -> np.ndar
     #face_std_norm = np.linalg.norm(face_std, axis=1)  # → (n_faces,)
 
     return face_std
+
+
+def compare_cohorts_per_subject(cohort_1: str,
+                                cohort_2: str,
+                                reference_mouse: str,
+                                result_dir: str,
+                                ref_distribution: str = "cohort_2"):
+    """
+    Per-subject comparison: for each mouse in one cohort, compute how far it is
+    from the distribution of the other cohort.
+
+    Creates rotating GIFs visualizing the Mahalanobis distance (per face) of
+    each subject in the query cohort to the reference cohort's distribution.
+    Returns a list of created GIF paths.
+    """
+    cohort_1 = Path(cohort_1)
+    cohort_2 = Path(cohort_2)
+    reference_mouse = Path(reference_mouse)
+    result_dir = Path(result_dir)
+    # Ensure output directory exists for saving GIFs
+    result_dir.mkdir(parents=True, exist_ok=True)
+    print(f"Per-subject comparison: {cohort_1} vs distribution of {cohort_2} (ref={ref_distribution})")
+
+    # Preprocessing: registration (same as other commands)
+    registration_to_reference(cohort_1, reference_mouse)
+    registration_to_reference(cohort_2, reference_mouse)
+
+    # Collect meshes
+    cohort_1_meshes = {x.name: x / "head_affine_registered.obj" for x in Path(cohort_1).iterdir()
+                       if (x / "head_affine_registered.obj").exists()}
+    cohort_2_meshes = {x.name: x / "head_affine_registered.obj" for x in Path(cohort_2).iterdir()
+                       if (x / "head_affine_registered.obj").exists()}
+
+    print(f"Found meshes -> cohort_1: {len(cohort_1_meshes)}, cohort_2: {len(cohort_2_meshes)}")
+
+    # select reference cohort for distribution here
+    if ref_distribution == "cohort_1":
+        ref_cohort_meshes = cohort_1_meshes
+        query_cohort_meshes = cohort_2_meshes
+
+        res_dir_new = result_dir / cohort_2.name
+        
+    else:
+        ref_cohort_meshes = cohort_2_meshes
+        query_cohort_meshes = cohort_1_meshes
+        res_dir_new = result_dir / cohort_1.name
+    res_dir_new.mkdir(parents=True, exist_ok=True)
+
+    # now per each mouse in query, compute GPA with reference cohort
+
+    for key, mesh_path in query_cohort_meshes.items():
+        print(f"Loading query mesh {key} from {mesh_path}")
+        
+        gpa_all = gpa_new({**ref_cohort_meshes, key: mesh_path}, modes="rigid")
+
+        # Build reference cohort (aligned) and the aligned key mesh
+        aligned_key_mesh: vtk.vtkPolyData = gpa_all[key]
+        aligned_ref_meshes = [gpa_all[k] for k in gpa_all.keys() if k != key]
+
+        # Extract faces once (assume identical topology across aligned meshes)
+        pts_key, faces = read_vtk_polydata_points_faces(aligned_key_mesh)
+        n_faces = faces.shape[0]
+
+        # Use per-point empirical covariance (not face centroids)
+        from sklearn.covariance import EmpiricalCovariance
+        # Stack reference meshes' points: (n_ref, n_points, 3)
+        ref_points_stack = np.stack([read_vtk_polydata_points_faces(m)[0] for m in aligned_ref_meshes], axis=0)
+        n_ref, n_points, _ = ref_points_stack.shape
+
+        # Fit EmpiricalCovariance per point with light trimming (99th percentile)
+        mu_pts = np.zeros((n_points, 3), dtype=np.float64)
+        prec_pts = np.zeros((n_points, 3, 3), dtype=np.float64)
+        eps = 1e-6
+        for p in range(n_points):
+            X = ref_points_stack[:, p, :]
+            if n_ref >= 2:
+                emp = EmpiricalCovariance()
+                emp.fit(X)
+                md = emp.mahalanobis(X)
+                thr = np.percentile(md, 99.0)
+                keep = md < thr
+                if keep.sum() >= 2:
+                    X = X[keep]
+                    emp.fit(X)
+                    mu_pts[p] = emp.location_
+                    prec_pts[p] = emp.precision_
+                    continue
+            # Fallback if insufficient refs after trimming
+            mu_p = X.mean(axis=0)
+            C = np.cov(X, rowvar=False) if n_ref > 1 else np.eye(3) * eps
+            C = np.asarray(C, dtype=np.float64)
+            C.flat[::4] += eps
+            mu_pts[p] = mu_p
+            prec_pts[p] = np.linalg.pinv(C)
+
+        # Per-point Mahalanobis for the query subject
+        deltas = pts_key - mu_pts  # (n_points, 3)
+        d2_pts = np.einsum('pi,pij,pj->p', deltas, prec_pts, deltas, optimize=True)
+        d2_pts = np.clip(d2_pts, 0.0, None)
+
+        # Aggregate per face as RMS over the face's vertices
+        mahal = np.sqrt(d2_pts[faces].mean(axis=1))
+
+        # Produce rotating GIF of Mahalanobis distances
+        out_path = res_dir_new / f"{key}_to_{ref_distribution}_mahalanobis.gif"
+        produce_gif_scalar_map(aligned_key_mesh, mahal, str(out_path),
+                               cmap_name='magma', clip_percentile=95.0,
+                               colorbar_label='Mahalanobis distance')
+
+
+        print(f"Saved Mahalanobis distance GIF for {key} at {out_path}")
 
 
 def compare_cohorts(cohort_1: str, cohort_2: str, reference_mouse: str, result_dir: str):
@@ -500,7 +654,7 @@ def main():
     parser = argparse.ArgumentParser(description="Run the full body and skull pipeline.")
     sbp = parser.add_subparsers(dest="cmd", required=True)
 
-    cmp_cohorts = sbp.add_parser("compare_cohorts", help="Run the pipeline.")
+    cmp_cohorts = sbp.add_parser("compare_cohorts", help="Compare cohorts at group or per-subject level.")
     cmp_cohorts.add_argument(
         "--cohort_1",
         type=str,
@@ -526,6 +680,22 @@ def main():
         type=str,
         required=True,
         help="Path to the result file.",
+    )
+
+    cmp_cohorts.add_argument(
+        "--method",
+        type=str,
+        choices=["group", "per_subject"],
+        default="group",
+        help="Comparison method: group (default) or per_subject",
+    )
+
+    cmp_cohorts.add_argument(
+        "--ref_distribution",
+        type=str,
+        choices=["cohort_1", "cohort_2"],
+        default="cohort_2",
+        help="For per_subject: which cohort defines the reference distribution.",
     )
 
     self_aver_parser = sbp.add_parser("one_cohort_statistics", help="Run the cohort statistics explanation.")
@@ -571,8 +741,18 @@ def main():
         result_dir = Path(args.result_dir)
         if not result_dir.exists():
             os.makedirs(result_dir)
-        # Call the compare_cohorts function
-        compare_cohorts(args.cohort_1, args.cohort_2, args.reference_mouse, result_dir)
+        # Branch by method
+        if getattr(args, "method", "group") == "per_subject":
+            compare_cohorts_per_subject(
+                args.cohort_1,
+                args.cohort_2,
+                args.reference_mouse,
+                result_dir,
+                ref_distribution=getattr(args, "ref_distribution", "cohort_2"),
+            )
+        else:
+            # Default group-level comparisons and visualizations
+            compare_cohorts(args.cohort_1, args.cohort_2, args.reference_mouse, result_dir)
 
     if args.cmd == "one_cohort_statistics":
         result_dir = Path(args.result_dir)

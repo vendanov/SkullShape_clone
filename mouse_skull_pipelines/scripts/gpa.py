@@ -4,7 +4,7 @@ from typing import Dict
 import numpy as np
 from tqdm.auto import tqdm
 #from concurrent.futures import ProcessPoolExecutor
-from procrustes import generic
+
 import vtk
 
 from mouse_skull_pipelines.scripts.mesh_algorithms import read_mesh_from_file
@@ -12,6 +12,7 @@ from mouse_skull_pipelines.scripts.mesh_algorithms import read_mesh_from_file
 
 def procreustes_alignment(reference_mesh, compute_mesh):
     #("STARTED")
+    from procrustes import generic
     if not isinstance(reference_mesh,np.ndarray):
         reference_mesh = np.array(reference_mesh)
     if not isinstance(compute_mesh,np.ndarray):
