@@ -359,12 +359,16 @@ def produce_gif_scalar_map(ref_mesh: vtk.vtkPolyData,
                            output_gif_file: str,
                            cmap_name: str = 'viridis',
                            clip_percentile: Optional[float] = 95.0,
+                           max_value: Optional[float] = None,
                            colorbar_label: str = 'Value'):
     from matplotlib import cm, animation
     # Prepare points and faces
     pts, faces = read_vtk_polydata_points_faces(ref_mesh)
     values = np.asarray(face_values).astype(float)
-    if clip_percentile is not None:
+    if max_value is not None:
+        vmax = float(max_value)
+        values = np.clip(values, a_min=None, a_max=vmax)
+    elif clip_percentile is not None:
         vmax = np.percentile(values, clip_percentile)
         values = np.clip(values, a_min=None, a_max=vmax)
     else:
@@ -445,7 +449,8 @@ def compare_cohorts_per_subject(cohort_1: str,
                                 cohort_2: str,
                                 reference_mouse: str,
                                 result_dir: str,
-                                ref_distribution: str = "cohort_2"):
+                                ref_distribution: str = "cohort_2",
+                                fixate_plotting_max: Optional[float] = None):
     """
     Per-subject comparison: for each mouse in one cohort, compute how far it is
     from the distribution of the other cohort.
@@ -545,7 +550,9 @@ def compare_cohorts_per_subject(cohort_1: str,
         # Produce rotating GIF of Mahalanobis distances
         out_path = res_dir_new / f"{key}_to_{ref_distribution}_mahalanobis.gif"
         produce_gif_scalar_map(aligned_key_mesh, mahal, str(out_path),
-                               cmap_name='magma', clip_percentile=95.0,
+                               cmap_name='magma',
+                               clip_percentile=None if fixate_plotting_max is not None else 95.0,
+                               max_value=fixate_plotting_max,
                                colorbar_label='Mahalanobis distance')
 
 
@@ -697,6 +704,12 @@ def main():
         default="cohort_2",
         help="For per_subject: which cohort defines the reference distribution.",
     )
+    cmp_cohorts.add_argument(
+        "--fixate_plotting_max",
+        type=float,
+        default=None,
+        help="For per_subject: cap Mahalanobis distances and colorbar at this value.",
+    )
 
     self_aver_parser = sbp.add_parser("one_cohort_statistics", help="Run the cohort statistics explanation.")
 
@@ -749,6 +762,7 @@ def main():
                 args.reference_mouse,
                 result_dir,
                 ref_distribution=getattr(args, "ref_distribution", "cohort_2"),
+                fixate_plotting_max=getattr(args, "fixate_plotting_max", None),
             )
         else:
             # Default group-level comparisons and visualizations
