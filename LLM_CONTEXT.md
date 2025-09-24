@@ -32,6 +32,7 @@ Repository Layout (selected)
 - `main.py` — CLI for registration via Snakemake and cohort comparisons/visualizations
 - `models/` — Registration parameter files and model references
 - `fancy_tmd_bmd/`, `notebooks/`, `matlab/` — Optional experiments, analysis, and legacy assets
+- `slurm/` — Place generic SLURM sbatch scripts here (e.g., sbatch_registration.sh, sbatch_compare_cohorts.sh)
 
 Data and Folder Conventions
 - Cohort directory: contains per‑subject subfolders with input CT and outputs
@@ -124,3 +125,4 @@ Notes
 - The repository contains experimental notebooks and legacy scripts; core production flow is centered on `generic_coregistration.smk` and the `main.py` CLI.
 - Paths in `smk_configs/mouse_skull.yaml` are environment‑specific and may require Windows vs. Linux adjustments.
 
+Scripts designed to work on linux

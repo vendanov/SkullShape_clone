@@ -1,10 +1,10 @@
-
+﻿
 import argparse
 import os
 import shutil
 import subprocess
 import sys
-from typing import Dict, Optional
+from typing import Dict, List, Optional
 import scipy.io as scio
 import numpy as np
 import vtk
@@ -37,53 +37,137 @@ def clean_after_registration(cohort_folder: Path):
                 print(f"Removing {file_path}")
                 os.remove(file_path)
 
+
+def resolve_curent_parent_dir():
+    # current file path
+    current_file = Path(__file__).resolve()
+    parent_dir = current_file.parent
+    return parent_dir
+
+
+
 def registration_to_reference(cohort_folder: Path, reference_mouse):
 
     """
     Check if the registration is done for the given cohort folder.
     """
 
-    # read config file
-    # check if the registration is done
-
-    # current file path
     current_file = Path(__file__).resolve()
     parent_dir = current_file.parent
     registration_cfg = parent_dir / 'smk_configs' / 'mouse_skull.yaml'
-
     script_home = parent_dir / 'snakemake_workflows' / 'generic_coregistration.smk'
 
-    # read yaml file
+    config = load_yaml_mapping(registration_cfg)
+    cohort_folder = Path(cohort_folder).expanduser().resolve()
+    reference_mouse = Path(reference_mouse).expanduser().resolve()
+    config['ref_image_dir'] = str(reference_mouse)
+    config['cohort_dir'] = str(cohort_folder)
 
-    with open(registration_cfg, 'r') as file:
-        config = yaml.safe_load(file)
-        config['ref_image_dir'] = str(reference_mouse)
-        config['cohort_dir'] = str(cohort_folder)
+    try:
+        run_snakemake_workflow(script_home, config, cores=9, keep_going=True)
+        clean_after_registration(cohort_folder)
+    except subprocess.CalledProcessError as e:
+        print(f"Error during registration: {e}")
+        print("Please check the config file and the cohort folder.")
 
-        # save the temporary config file
-        with tempfile.NamedTemporaryFile(delete=False, suffix='.yaml') as temp_file:
 
-            try:
-                temp_file.write(yaml.dump(config).encode())
-                temp_file.close()
-                temp_file_path = temp_file.name
-                print(f"Temporary config file created at: {temp_file_path}")
-                # run the temporary config file registration
-                # run the registration
-                snakemake_command = f"snakemake --snakefile {script_home} --configfile {temp_file_path} --cores 9  --keep-going"
-                cmd = snakemake_command.split()
-                subprocess.run(cmd, check=True)
-                #clean_after_registration(cohort_folder)
-            except Exception as e:
-                print(f"Error during registration: {e}")
-                print("Please check the config file and the cohort folder.")
-            finally:
-                # remove the temporary config file
-                temp_file.close()
-                os.remove(temp_file.name)
 
-            # remove the temporary config file
-            #os.remove(temp_file_path)
+
+def load_yaml_mapping(config_path: Path) -> Dict:
+    with open(config_path, 'r', encoding='utf-8') as fh:
+        data = yaml.safe_load(fh) or {}
+    if not isinstance(data, dict):
+        raise ValueError(f"Config file {config_path} must contain a mapping.")
+    return data
+
+def _coerce_override_value(value: str, template):
+    if isinstance(template, bool):
+        return value.strip().lower() in {"1", "true", "yes", "on"}
+    if isinstance(template, int):
+        return int(value)
+    if isinstance(template, float):
+        return float(value)
+    return value
+
+
+def apply_config_overrides(config: Dict, overrides: Optional[List[str]]) -> None:
+    if not overrides:
+        return
+    for item in overrides:
+        if '=' not in item:
+            raise ValueError(f"Invalid override '{item}'. Use KEY=VALUE.")
+        key, raw_value = item.split('=', 1)
+        key = key.strip()
+        value = raw_value.strip()
+        if not key:
+            raise ValueError('Override key cannot be empty.')
+        if key in config:
+            config[key] = _coerce_override_value(value, config[key])
+        else:
+            config[key] = value
+
+
+def run_snakemake_workflow(snakefile: Path, config: Dict, cores: int, keep_going: bool) -> None:
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as temp_file:
+        yaml.safe_dump(config, temp_file)
+        temp_path = temp_file.name
+    cmd = [
+        'snakemake',
+        '--snakefile', str(snakefile),
+        '--configfile', temp_path,
+        '--cores', str(cores),
+    ]
+    if keep_going:
+        cmd.append('--keep-going')
+    try:
+        subprocess.run(cmd, check=True)
+    finally:
+        try:
+            os.remove(temp_path)
+        except FileNotFoundError:
+            pass
+
+
+
+def prepare_full_body_and_extract_heads(
+    cohort_dir: Path,
+    ref_image_dir: Optional[Path],
+    overrides: Optional[List[str]],
+    cores: int,
+    keep_going: bool,
+) -> None:
+    base_dir = Path(__file__).resolve().parent
+    config_path = base_dir / 'smk_configs' / 'mouse_skull.yaml'
+    if not config_path.exists():
+        raise FileNotFoundError(f"Config file not found: {config_path}")
+    config = load_yaml_mapping(config_path)
+    workflows_root = base_dir / 'snakemake_workflows'
+    cohort_dir = cohort_dir.expanduser().resolve()
+    if not cohort_dir.exists():
+        raise FileNotFoundError(f"Cohort directory not found: {cohort_dir}")
+    config['cohort_dir'] = str(cohort_dir)
+
+    apply_config_overrides(config, overrides)
+    required_keys = {
+        'cohort_dir',
+        'ref_image_dir',
+        'parameter_file_nonlin',
+        'parameter_file_lin',
+        'mesh_transform_script',
+        'slicer_core',
+        'ref_im',
+        'ref_mask',
+        'ref_landmarks',
+        'body_part_detection_top_model',
+    }
+    missing = [key for key in required_keys if key not in config]
+    if missing:
+        raise ValueError(
+            'Missing required config keys for full body workflow: ' + ', '.join(sorted(missing))
+        )
+    run_snakemake_workflow(workflows_root / 'mouse_full_body.smk', config, cores, keep_going)
+    run_snakemake_workflow(workflows_root / 'extract_head_from_full_body.smk', config, cores, keep_going)
+
 
 
 
@@ -711,6 +795,13 @@ def main():
         help="For per_subject: cap Mahalanobis distances and colorbar at this value.",
     )
 
+    full_body_parser = sbp.add_parser("generate_full_body", help="Generate full body volumes and extract head CTs.")
+    full_body_parser.add_argument("--cohort-dir", type=str, required=True, help="Path to the cohort directory containing raw full body scans.")
+    full_body_parser.add_argument("--ref-image-dir", dest="ref_image_dir", type=str, default=None, help="Override the reference image directory in the config.")
+    full_body_parser.add_argument("--cores", type=int, default=8, help="Number of CPU cores to pass to Snakemake.")
+    full_body_parser.add_argument("--keep-going", action="store_true", help="Pass --keep-going to Snakemake.")
+    full_body_parser.add_argument("--config-override", action="append", metavar="KEY=VALUE", default=[], help="Override additional config entries (repeatable).")
+
     self_aver_parser = sbp.add_parser("one_cohort_statistics", help="Run the cohort statistics explanation.")
 
     self_aver_parser.add_argument(
@@ -768,11 +859,20 @@ def main():
             # Default group-level comparisons and visualizations
             compare_cohorts(args.cohort_1, args.cohort_2, args.reference_mouse, result_dir)
 
-    if args.cmd == "one_cohort_statistics":
+    elif args.cmd == "one_cohort_statistics":
         result_dir = Path(args.result_dir)
         if not result_dir.exists():
             os.makedirs(result_dir)
-        one_cohort_statistics(args.cohort, args.reference_mouse, result_dir,upper_limit=args.upper_limit)
+        one_cohort_statistics(args.cohort, args.reference_mouse, result_dir, upper_limit=args.upper_limit)
+
+    elif args.cmd == "generate_full_body":
+        prepare_full_body_and_extract_heads(
+            cohort_dir=Path(args.cohort_dir),
+            ref_image_dir=Path(args.ref_image_dir) if args.ref_image_dir else None,
+            overrides=args.config_override,
+            cores=9,
+            keep_going=True,
+        )
 
 
 if __name__ == "__main__":
