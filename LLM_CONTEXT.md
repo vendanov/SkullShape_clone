@@ -124,5 +124,7 @@ Useful Filepaths (clickable)
 Notes
 - The repository contains experimental notebooks and legacy scripts; core production flow is centered on `generic_coregistration.smk` and the `main.py` CLI.
 - Paths in `smk_configs/mouse_skull.yaml` are environment‑specific and may require Windows vs. Linux adjustments.
+- `python main.py visualize_subject <subject_dir> <reference_cohort>` opens an interactive VTK viewer aligning the subject with the cohort Procrustes mean (toggle peers with keyboard shortcuts).
+
 
 Scripts designed to work on linux
