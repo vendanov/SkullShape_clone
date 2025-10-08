@@ -1,5 +1,6 @@
 import shutil
 import sys
+from pathlib import Path
 
 import numpy as np
 import SimpleITK as sitk
@@ -231,28 +232,34 @@ rule linear_coregistration:
 
 
 
-def apply_ants_transform_to_mesh(mesh_path, transform_path, output_path):
-    # Load mesh
+def apply_ants_transform_to_mesh(mesh_path, transform_path, output_path, additional_displacement=None):
+    """Apply ANTs composite transform and optional displacement field to mesh vertices."""
     reader = vtk.vtkOBJReader()
     reader.SetFileName(mesh_path)
     reader.Update()
     mesh = reader.GetOutput()
     points = mesh.GetPoints()
 
-    # Load transform
     transform = ants.read_transform(transform_path)
 
-    # Transform each point
+    displacement_transform = None
+    if additional_displacement:
+        displacement_image = sitk.ReadImage(additional_displacement)
+        if displacement_image.GetPixelID() != sitk.sitkVectorFloat64:
+            displacement_image = sitk.Cast(displacement_image, sitk.sitkVectorFloat64)
+        displacement_transform = sitk.DisplacementFieldTransform(displacement_image)
+        displacement_transform.SetInterpolator(sitk.sitkLinear)
+
     new_points = vtk.vtkPoints()
     for i in range(points.GetNumberOfPoints()):
         pt = points.GetPoint(i)
-        warped_pt = transform.apply_to_point(pt)  # returns a tuple (x, y, z)
+        warped_pt = transform.apply_to_point(pt)
+        if displacement_transform is not None:
+            warped_pt = displacement_transform.TransformPoint(tuple(warped_pt))
         new_points.InsertNextPoint(warped_pt)
 
-    # Update mesh with transformed points
     mesh.SetPoints(new_points)
 
-    # Write output mesh
     writer = vtk.vtkOBJWriter()
     writer.SetFileName(output_path)
     writer.SetInputData(mesh)
@@ -261,78 +268,122 @@ def apply_ants_transform_to_mesh(mesh_path, transform_path, output_path):
 
 
 rule non_rigid_registration_rule:
-    input: (PROCESS_DIR / "{subject}/2_lin_cor.flag")
-    output: (PROCESS_DIR / "{subject}/3_nonrig.flag")
+    input:
+        PROCESS_DIR / "{subject}/2_lin_cor.flag"
+    output: PROCESS_DIR / "{subject}/3_ants_nonrig.flag"
     params:
-        out_nlim=lambda wildcards: PROCESS_DIR / f"{wildcards.subject}/nonlin_image.nii.gz",
-        out_txt=lambda wildcards: PROCESS_DIR / f"{wildcards.subject}/nl_transformation_params.txt",
-        inp_coregim=lambda wildcards: PROCESS_DIR / f"{wildcards.subject}/coregistered_head.nii.gz"
+        inp_coregim=lambda wildcards: PROCESS_DIR / f"{wildcards.subject}/coregistered_head.nii.gz",
+        warped=lambda wildcards: PROCESS_DIR / f"{wildcards.subject}/warped_elastic.nii.gz",
+        deformation=lambda wildcards: PROCESS_DIR / f"{wildcards.subject}/deformationField.h5"
     threads: 2
     run:
-        # remove previous files
-        Path(str(params.out_nlim)).unlink(missing_ok=True)
-        Path(str(params.out_txt)).unlink(missing_ok=True)
+        warped_path = Path(str(params.warped))
+        deformation_path = Path(str(params.deformation))
+        warped_path.unlink(missing_ok=True)
+        deformation_path.unlink(missing_ok=True)
         import ants
 
-        or_ref_im = REF_IMAGE / 'oriented_image.nii.gz'
-        file_mov = str(or_ref_im)
-        file_ref = str(params.inp_coregim)
-        fixed = ants.image_read(file_ref)
-        moving = ants.image_read(file_mov)
+        fixed = ants.image_read(str(params.inp_coregim))
+        moving = ants.image_read(str(REF_IMAGE / 'oriented_image.nii.gz'))
 
-        # Запуск регистрации
         reg = ants.registration(
             fixed=fixed,
             moving=moving,
-            type_of_transform="SyNOnly",# гибкая деформация, несимметричная
+            type_of_transform="SyNOnly",# flexible non-symmetric deformation
             grad_step=0.5,
             flow_sigma=1,
             total_sigma=0,
+            singleprecision=True,
             write_composite_transform=True,
-            #reg_iterations=(20, 15, 10),
-            reg_iterations=(200, 150, 100),
-            verbose=True  # шаг градиента, можно уменьшить при рассыпании
+            verbose=True
         )
-        src_transform = reg["fwdtransforms"]
 
-        print("src_transform",src_transform)
-
-
-
-        # read all transforms
-
-        transforms_pth = reg['fwdtransforms']
+        fwd_transforms = reg["fwdtransforms"]
+        print("src_transform", fwd_transforms)
 
         warped = reg["warpedmovout"]
-        ants.image_write(warped,str(Path(str(output[0])).parent / "warped_elastic.nii.gz"))
+        ants.image_write(warped, str(warped_path))
 
-        # Куда копировать
-        dst_transform = Path(str(output[0])).parent /  "deformationField.h5"
+        composite_transform = fwd_transforms[0] if isinstance(fwd_transforms, (list, tuple)) else fwd_transforms
+        shutil.copy(composite_transform, str(deformation_path))
 
-
-        # Копирование
-        # Сохранение результатов
-        shutil.copy(src_transform,str(dst_transform))
-
-        if isinstance(reg['invtransforms'] ,str):
-            Path(str(reg['invtransforms'])).unlink(missing_ok=True)
+        inv_transforms = reg['invtransforms']
+        if isinstance(inv_transforms, str):
+            Path(inv_transforms).unlink(missing_ok=True)
         else:
-            for i in range(len(reg['invtransforms'])):
-                Path(str(reg['invtransforms'][i])).unlink(missing_ok=True)
-        if isinstance(reg['fwdtransforms'] ,str):
-            Path(str(reg['fwdtransforms'])).unlink(missing_ok=True)
+            for transform_path in inv_transforms:
+                Path(transform_path).unlink(missing_ok=True)
+        if isinstance(fwd_transforms, str):
+            Path(fwd_transforms).unlink(missing_ok=True)
         else:
-            for i in range(len(reg['fwdtransforms'])):
-                Path(str(reg['fwdtransforms'][i])).unlink(missing_ok=True)
-        Path(output[0]).touch(exist_ok=True)
+            for transform_path in fwd_transforms:
+                Path(transform_path).unlink(missing_ok=True)
+
+        Path(str(output[0])).touch(exist_ok=True)
 
 
+
+rule elastix_refinement_rule:
+    input:
+        ants_flag=PROCESS_DIR / "{subject}/3_ants_nonrig.flag",
+        warped=lambda wildcards: PROCESS_DIR / f"{wildcards.subject}/warped_elastic.nii.gz",
+        fixed=lambda wildcards: PROCESS_DIR / f"{wildcards.subject}/coregistered_head.nii.gz"
+    output: PROCESS_DIR / "{subject}/3_nonrig.flag"
+    params:
+        refined_image=lambda wildcards: PROCESS_DIR / f"{wildcards.subject}/nonlin_image.nii.gz",
+        transform_params=lambda wildcards: PROCESS_DIR / f"{wildcards.subject}/nl_transformation_params.txt",
+        deformation_field=lambda wildcards: PROCESS_DIR / f"{wildcards.subject}/elastix_deformation_field.nii.gz"
+    threads: 2
+    run:
+        refined_image_path = Path(str(params.refined_image))
+        refined_image_path.unlink(missing_ok=True)
+        transform_path = Path(str(params.transform_params))
+        if transform_path.exists():
+            transform_path.unlink()
+        for existing_file in transform_path.parent.glob(f"{transform_path.stem}_*{transform_path.suffix}"):
+            existing_file.unlink(missing_ok=True)
+        deformation_field_path = Path(str(params.deformation_field))
+        deformation_field_path.unlink(missing_ok=True)
+
+        elastix = sitk.ElastixImageFilter()
+        sitk_fixed = sitk.ReadImage(str(input.fixed))
+        sitk_moving_initial = sitk.ReadImage(str(input.warped))
+        elastix.SetFixedImage(sitk_fixed)
+        elastix.SetMovingImage(sitk_moving_initial)
+
+        if PARAMETER_FILE_NONLIN.exists():
+            parameter_map = sitk.ReadParameterFile(str(PARAMETER_FILE_NONLIN))
+        else:
+            parameter_map = sitk.GetDefaultParameterMap("bspline")
+        elastix.SetParameterMap(parameter_map)
+        elastix.Execute()
+
+        refined_image = elastix.GetResultImage()
+        sitk.WriteImage(refined_image, str(refined_image_path))
+
+        transform_maps = elastix.GetTransformParameterMap()
+        for idx, parameter_map in enumerate(transform_maps):
+            if idx == 0:
+                target_path = transform_path
+            else:
+                target_path = transform_path.parent / f"{transform_path.stem}_{idx}{transform_path.suffix}"
+            sitk.WriteParameterFile(parameter_map, str(target_path))
+
+        transformix = sitk.TransformixImageFilter()
+        transformix.SetTransformParameterMap(transform_maps)
+        transformix.SetMovingImage(sitk_moving_initial)
+        transformix.ComputeDeformationFieldOn()
+        transformix.Execute()
+        deformation_field = transformix.GetDeformationField()
+        sitk.WriteImage(deformation_field, str(deformation_field_path))
+
+        Path(str(output[0])).touch(exist_ok=True)
 
 
 import ants
 
 rule inverse_transform_mesh_rule:
-    input: (PROCESS_DIR / "{subject}/3_nonrig.flag")
+    input: PROCESS_DIR / "{subject}/3_nonrig.flag"
     output: (PROCESS_DIR / "{subject}/4_inv_mesh.flag")
     params:
         in_ct=lambda wildcards: PROCESS_DIR / f"{wildcards.subject}/nl_transformation_params.txt",
@@ -340,27 +391,19 @@ rule inverse_transform_mesh_rule:
 
     threads: 2
     run:
-        # remove previous files
         Path(str(params.out_head)).unlink(missing_ok=True)
-        dir1name = str(Path(input[0]).parent)
-        #generate deformation field
+        subject_dir = Path(input[0]).parent
 
         or_ref_mesh = REF_IMAGE / "oriented_mesh.obj"
-        print(or_ref_mesh)
+        deformation_field = subject_dir / "deformationField.h5"
+        elastix_field = subject_dir / "elastix_deformation_field.nii.gz"
 
-        def_field_file = dir1name + os.sep + "deformationField.h5"
+        additional = str(elastix_field) if elastix_field.exists() else None
+        apply_ants_transform_to_mesh(
+            str(or_ref_mesh),
+            str(deformation_field),
+            str(params.out_head),
+            additional_displacement=additional,
+        )
 
-        cmd = (f"xvfb-run -a  {SLICER_CORE} --python-script {MESH_TRANSFORM_SCRIPT} '{def_field_file}' '{or_ref_mesh}' "
-               f"'{params.out_head}'  --testing --no-splash --no-main-window")
-        print(cmd)
-        shell(cmd)
-        #shell("rm -rf '" + def_field_file + "'")
-
-        # cmd = (f"xvfb-run -a  {SLICER_CORE} --python-script {MESH_TRANSFORM_SCRIPT} '{def_field_file}' '{or_ref_mesh}' "
-        #        f"'{params.out_head}'  --testing --no-splash --no-main-window")
-        # print(cmd)
-        # shell(cmd)
-        # if not Path(params.out_head).exists():
-        #     raise ValueError("Mesh transformation failed, check the logs")
         Path(output[0]).touch(exist_ok=True)
-        #shell("rm -rf '" + def_field_file + "'")
