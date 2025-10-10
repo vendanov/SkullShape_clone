@@ -1,4 +1,4 @@
-import shutil
+﻿import shutil
 import sys
 from pathlib import Path
 
@@ -159,6 +159,14 @@ def flip_image(input_path: str, output_path: str, axes=(False, False, False), co
 
     sitk.WriteImage(flipped_img,output_path)
 
+
+def replace_extension(path: Path, new_suffix: str) -> Path:
+    """Return path with the final extension replaced, handling .nii.gz composites."""
+    name = path.name
+    if name.endswith('.nii.gz'):
+        return path.with_name(name[:-7] + new_suffix)
+    return path.with_suffix(new_suffix)
+
 rule linear_coregistration:
     input: PROCESS_DIR / "{subject}"/ ct_im_name,
         (PROCESS_DIR / "{subject}/1_otsu.flag")
@@ -232,7 +240,7 @@ rule linear_coregistration:
 
 
 
-def apply_ants_transform_to_mesh(mesh_path, transform_path, output_path, additional_displacement=None):
+def apply_ants_transform_to_mesh(mesh_path, transform_path, output_path, additional_displacement=None, affine_path=None):
     """Apply ANTs composite transform and optional displacement field to mesh vertices."""
     reader = vtk.vtkOBJReader()
     reader.SetFileName(mesh_path)
@@ -240,23 +248,51 @@ def apply_ants_transform_to_mesh(mesh_path, transform_path, output_path, additio
     mesh = reader.GetOutput()
     points = mesh.GetPoints()
 
-    transform = ants.read_transform(transform_path)
+    transforms = []
+    if affine_path and Path(affine_path).exists():
+        affine_matrix = np.loadtxt(affine_path)
+        if affine_matrix.shape == (4, 4):
+            affine = sitk.AffineTransform(3)
+            linear_part = affine_matrix[:3, :3]
+            translation = affine_matrix[:3, 3]
+            affine.SetMatrix(linear_part.flatten())
+            affine.SetTranslation(tuple(float(v) for v in translation))
+            transforms.append(affine)
 
-    displacement_transform = None
-    if additional_displacement:
-        displacement_image = sitk.ReadImage(additional_displacement)
-        if displacement_image.GetPixelID() != sitk.sitkVectorFloat64:
-            displacement_image = sitk.Cast(displacement_image, sitk.sitkVectorFloat64)
-        displacement_transform = sitk.DisplacementFieldTransform(displacement_image)
-        displacement_transform.SetInterpolator(sitk.sitkLinear)
+    base_transform = sitk.ReadTransform(transform_path)
+    transforms.append(base_transform)
+
+    if additional_displacement and Path(additional_displacement).exists():
+        add_path = Path(additional_displacement)
+        if add_path.suffix.lower() == '.h5':
+            extra_transform = sitk.ReadTransform(str(add_path))
+            transforms.append(extra_transform)
+        else:
+            displacement_image = sitk.ReadImage(str(add_path))
+            if displacement_image.GetPixelID() != sitk.sitkVectorFloat64:
+                displacement_image = sitk.Cast(displacement_image, sitk.sitkVectorFloat64)
+            displacement_transform = sitk.DisplacementFieldTransform(displacement_image)
+            displacement_transform.SetInterpolator(sitk.sitkLinear)
+            transforms.append(displacement_transform)
+
+    composite = sitk.CompositeTransform(transforms)
+
+    def ras_to_lps(pt):
+        x, y, z = pt
+        return (-x, -y, z)
+
+    def lps_to_ras(pt):
+        x, y, z = pt
+        return (-x, -y, z)
 
     new_points = vtk.vtkPoints()
     for i in range(points.GetNumberOfPoints()):
-        pt = points.GetPoint(i)
-        warped_pt = transform.apply_to_point(pt)
-        if displacement_transform is not None:
-            warped_pt = displacement_transform.TransformPoint(tuple(warped_pt))
-        new_points.InsertNextPoint(warped_pt)
+        ras_pt = points.GetPoint(i)
+        lps_pt = ras_to_lps(ras_pt)
+
+        warped_lps = composite.TransformPoint(tuple(float(v) for v in lps_pt))
+        warped_ras = lps_to_ras(warped_lps)
+        new_points.InsertNextPoint(warped_ras)
 
     mesh.SetPoints(new_points)
 
@@ -332,7 +368,7 @@ rule elastix_refinement_rule:
     params:
         refined_image=lambda wildcards: PROCESS_DIR / f"{wildcards.subject}/nonlin_image.nii.gz",
         transform_params=lambda wildcards: PROCESS_DIR / f"{wildcards.subject}/nl_transformation_params.txt",
-        deformation_field=lambda wildcards: PROCESS_DIR / f"{wildcards.subject}/elastix_deformation_field.nii.gz"
+        deformation_field=lambda wildcards: PROCESS_DIR / f"{wildcards.subject}/elastix_deformation_field.h5"
     threads: 2
     run:
         refined_image_path = Path(str(params.refined_image))
@@ -344,7 +380,8 @@ rule elastix_refinement_rule:
             existing_file.unlink(missing_ok=True)
         deformation_field_path = Path(str(params.deformation_field))
         deformation_field_path.unlink(missing_ok=True)
-
+        deformation_field_h5 = replace_extension(deformation_field_path, '.h5')
+ 
         elastix = sitk.ElastixImageFilter()
         sitk_fixed = sitk.ReadImage(str(input.fixed))
         sitk_moving_initial = sitk.ReadImage(str(input.warped))
@@ -369,15 +406,55 @@ rule elastix_refinement_rule:
                 target_path = transform_path.parent / f"{transform_path.stem}_{idx}{transform_path.suffix}"
             sitk.WriteParameterFile(parameter_map, str(target_path))
 
-        transformix = sitk.TransformixImageFilter()
-        transformix.SetTransformParameterMap(transform_maps)
-        transformix.SetMovingImage(sitk_moving_initial)
-        transformix.ComputeDeformationFieldOn()
-        transformix.Execute()
-        deformation_field = transformix.GetDeformationField()
-        sitk.WriteImage(deformation_field, str(deformation_field_path))
+            transformix = sitk.TransformixImageFilter()
+            transformix.SetTransformParameterMap(transform_maps)
+            # You don't need the moving image to compute the deformation field:
+            # transformix.SetMovingImage(sitk_moving_initial)   # optional; only needed if you also resample the moving image
+            transformix.SetComputeDeformationField(True)        # equivalent to ComputeDeformationFieldOn()
+            transformix.SetMovingImage(sitk_moving_initial)  # Required to set size/spacing/origin/direction of the deformation field
+            transformix.Execute()
 
-        Path(str(output[0])).touch(exist_ok=True)
+            deformation_field = transformix.GetDeformationField()
+
+            # --- FIX: cast to VectorFloat64 for DisplacementFieldTransform ---
+            if deformation_field.GetPixelID() != sitk.sitkVectorFloat64:
+                deformation_field = sitk.Cast(deformation_field, sitk.sitkVectorFloat64)
+
+            # (optional sanity checks; helps avoid silent metadata mismatches)
+            assert deformation_field.GetNumberOfComponentsPerPixel() == 3, "Deformation field must have 3 components."
+            for a, b, name in [
+                (deformation_field.GetSize(),      sitk_fixed.GetSize(),      "size"),
+                (deformation_field.GetSpacing(),   sitk_fixed.GetSpacing(),   "spacing"),
+                (deformation_field.GetOrigin(),    sitk_fixed.GetOrigin(),    "origin"),
+                (deformation_field.GetDirection(), sitk_fixed.GetDirection(), "direction"),
+            ]:
+                if a != b:
+                    print(f"Warning: deformation field {name} differs from fixed image {name}: {a} vs {b}")
+
+            displacement_transform = sitk.DisplacementFieldTransform(deformation_field)
+            sitk.WriteTransform(displacement_transform, str(deformation_field_h5))
+
+            import os, tempfile
+
+            flag = Path(str(output[0]))
+            flag.parent.mkdir(parents=True, exist_ok=True)
+
+            # Write to a temp file, fsync, then atomic rename -> avoids visibility races on NFS
+            with tempfile.NamedTemporaryFile(dir=str(flag.parent), delete=False) as tf:
+                tf.write(b"OK\n")
+                tf.flush()
+                os.fsync(tf.fileno())
+                tmp_name = tf.name
+
+            # fsync the directory entry, then rename atomically
+            dir_fd = os.open(str(flag.parent), os.O_RDONLY)
+            try:
+                os.replace(tmp_name, str(flag))
+                os.fsync(dir_fd)
+            finally:
+                os.close(dir_fd)
+
+
 
 
 import ants
@@ -396,14 +473,16 @@ rule inverse_transform_mesh_rule:
 
         or_ref_mesh = REF_IMAGE / "oriented_mesh.obj"
         deformation_field = subject_dir / "deformationField.h5"
-        elastix_field = subject_dir / "elastix_deformation_field.nii.gz"
+        elastix_field = subject_dir / "elastix_deformation_field.h5"
+        elastix_field_h5 = replace_extension(elastix_field, '.h5')
 
-        additional = str(elastix_field) if elastix_field.exists() else None
+        additional = str(elastix_field_h5) if elastix_field_h5.exists() else None
+
         apply_ants_transform_to_mesh(
             str(or_ref_mesh),
             str(deformation_field),
             str(params.out_head),
             additional_displacement=additional,
+            affine_path=str(params.in_ct),
         )
-
         Path(output[0]).touch(exist_ok=True)
