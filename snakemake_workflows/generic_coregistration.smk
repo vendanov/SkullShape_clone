@@ -1,10 +1,10 @@
 ﻿import shutil
 import sys
 from pathlib import Path
+import subprocess
 
 import numpy as np
 import SimpleITK as sitk
-import vtk
 
 from mouse_skull_pipelines.scripts.image_algorithms import register_linear_full, non_rigid_registration, \
     LinearRegistrationConfig, otsu_treshold
@@ -160,13 +160,6 @@ def flip_image(input_path: str, output_path: str, axes=(False, False, False), co
     sitk.WriteImage(flipped_img,output_path)
 
 
-def replace_extension(path: Path, new_suffix: str) -> Path:
-    """Return path with the final extension replaced, handling .nii.gz composites."""
-    name = path.name
-    if name.endswith('.nii.gz'):
-        return path.with_name(name[:-7] + new_suffix)
-    return path.with_suffix(new_suffix)
-
 rule linear_coregistration:
     input: PROCESS_DIR / "{subject}"/ ct_im_name,
         (PROCESS_DIR / "{subject}/1_otsu.flag")
@@ -237,69 +230,6 @@ rule linear_coregistration:
 
         #raise ValueError("STOP")
         Path(output[0]).touch(exist_ok=True)
-
-
-
-def apply_ants_transform_to_mesh(mesh_path, transform_path, output_path, additional_displacement=None, affine_path=None):
-    """Apply ANTs composite transform and optional displacement field to mesh vertices."""
-    reader = vtk.vtkOBJReader()
-    reader.SetFileName(mesh_path)
-    reader.Update()
-    mesh = reader.GetOutput()
-    points = mesh.GetPoints()
-
-    transforms = []
-    if affine_path and Path(affine_path).exists():
-        affine_matrix = np.loadtxt(affine_path)
-        if affine_matrix.shape == (4, 4):
-            affine = sitk.AffineTransform(3)
-            linear_part = affine_matrix[:3, :3]
-            translation = affine_matrix[:3, 3]
-            affine.SetMatrix(linear_part.flatten())
-            affine.SetTranslation(tuple(float(v) for v in translation))
-            transforms.append(affine)
-
-    base_transform = sitk.ReadTransform(transform_path)
-    transforms.append(base_transform)
-
-    if additional_displacement and Path(additional_displacement).exists():
-        add_path = Path(additional_displacement)
-        if add_path.suffix.lower() == '.h5':
-            extra_transform = sitk.ReadTransform(str(add_path))
-            transforms.append(extra_transform)
-        else:
-            displacement_image = sitk.ReadImage(str(add_path))
-            if displacement_image.GetPixelID() != sitk.sitkVectorFloat64:
-                displacement_image = sitk.Cast(displacement_image, sitk.sitkVectorFloat64)
-            displacement_transform = sitk.DisplacementFieldTransform(displacement_image)
-            displacement_transform.SetInterpolator(sitk.sitkLinear)
-            transforms.append(displacement_transform)
-
-    composite = sitk.CompositeTransform(transforms)
-
-    def ras_to_lps(pt):
-        x, y, z = pt
-        return (-x, -y, z)
-
-    def lps_to_ras(pt):
-        x, y, z = pt
-        return (-x, -y, z)
-
-    new_points = vtk.vtkPoints()
-    for i in range(points.GetNumberOfPoints()):
-        ras_pt = points.GetPoint(i)
-        lps_pt = ras_to_lps(ras_pt)
-
-        warped_lps = composite.TransformPoint(tuple(float(v) for v in lps_pt))
-        warped_ras = lps_to_ras(warped_lps)
-        new_points.InsertNextPoint(warped_ras)
-
-    mesh.SetPoints(new_points)
-
-    writer = vtk.vtkOBJWriter()
-    writer.SetFileName(output_path)
-    writer.SetInputData(mesh)
-    writer.Write()
 
 
 
@@ -380,7 +310,6 @@ rule elastix_refinement_rule:
             existing_file.unlink(missing_ok=True)
         deformation_field_path = Path(str(params.deformation_field))
         deformation_field_path.unlink(missing_ok=True)
-        deformation_field_h5 = replace_extension(deformation_field_path, '.h5')
  
         elastix = sitk.ElastixImageFilter()
         sitk_fixed = sitk.ReadImage(str(input.fixed))
@@ -432,7 +361,7 @@ rule elastix_refinement_rule:
                     print(f"Warning: deformation field {name} differs from fixed image {name}: {a} vs {b}")
 
             displacement_transform = sitk.DisplacementFieldTransform(deformation_field)
-            sitk.WriteTransform(displacement_transform, str(deformation_field_h5))
+            sitk.WriteTransform(displacement_transform, str(deformation_field_path))
 
             import os, tempfile
 
@@ -474,15 +403,23 @@ rule inverse_transform_mesh_rule:
         or_ref_mesh = REF_IMAGE / "oriented_mesh.obj"
         deformation_field = subject_dir / "deformationField.h5"
         elastix_field = subject_dir / "elastix_deformation_field.h5"
-        elastix_field_h5 = replace_extension(elastix_field, '.h5')
 
-        additional = str(elastix_field_h5) if elastix_field_h5.exists() else None
+        transforms = [str(deformation_field)]
+        if elastix_field.exists():
+            transforms.append(str(elastix_field))
 
-        apply_ants_transform_to_mesh(
+        slicer_cmd = [
+            "xvfb-run","-a", 
+            str(SLICER_CORE),
+            "--no-main-window",
+            "--no-splash",
+            "--python-script",
+            str(MESH_TRANSFORM_SCRIPT),
             str(or_ref_mesh),
-            str(deformation_field),
             str(params.out_head),
-            additional_displacement=additional,
-            affine_path=str(params.in_ct),
-        )
+        ] + transforms
+
+        subprocess.run(slicer_cmd, check=True)
+        if Path(params.out_head).exists() is False:
+            raise ValueError("Mesh transformation failed!")
         Path(output[0]).touch(exist_ok=True)
