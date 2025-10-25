@@ -395,7 +395,7 @@ rule inverse_transform_mesh_rule:
         in_ct=lambda wildcards: PROCESS_DIR / f"{wildcards.subject}/nl_transformation_params.txt",
         out_head=lambda wildcards: PROCESS_DIR / f"{wildcards.subject}/head_affine_registered.obj",
 
-    threads: 2
+    threads: 3
     run:
         Path(str(params.out_head)).unlink(missing_ok=True)
         subject_dir = Path(input[0]).parent
@@ -422,4 +422,7 @@ rule inverse_transform_mesh_rule:
         subprocess.run(slicer_cmd, check=True)
         if Path(params.out_head).exists() is False:
             raise ValueError("Mesh transformation failed!")
+
+        deformation_field.unlink(missing_ok=True)
+        elastix_field.unlink(missing_ok=True)
         Path(output[0]).touch(exist_ok=True)
