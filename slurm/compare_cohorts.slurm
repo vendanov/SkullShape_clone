@@ -37,7 +37,9 @@ if [[ -d "$REPO/.snakemake" ]]; then
   rm -rf "$REPO/.snakemake"
 fi
 
-
+if [[ -d ".snakemake" ]]; then
+  rm -rf ".snakemake"
+fi
 # Now prepare cohort_2 by making images.
 
 echo "[INFO] Preparing cohort_2 images under: $COHORT_2"

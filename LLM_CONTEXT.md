@@ -57,6 +57,7 @@ Configuration
   - `ref_im`, `ref_mask`, `ref_landmarks`: Filenames within the reference folder
   - Optional: model paths for landmark/ROI detection (`control_points_model`, `skull_rois_model`, `sutures_model`, etc.)
   - Flags: `linreg_simple`, `otsu_remove_outer`
+  - Nonlinear tuning: adjust `nonrigid_registration.elastix_overrides` (e.g. `FinalGridSpacingInVoxels`, `MaximumNumberOfIterations`) to trade deformation strength vs. runtime.
 
 Core Workflow: Generic Coregistration
 - Location: `snakemake_workflows/generic_coregistration.smk`

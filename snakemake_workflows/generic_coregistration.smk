@@ -292,10 +292,10 @@ rule non_rigid_registration_rule:
 rule elastix_refinement_rule:
     input:
         ants_flag=PROCESS_DIR / "{subject}/3_ants_nonrig.flag",
-        warped=lambda wildcards: PROCESS_DIR / f"{wildcards.subject}/warped_elastic.nii.gz",
-        fixed=lambda wildcards: PROCESS_DIR / f"{wildcards.subject}/coregistered_head.nii.gz"
     output: PROCESS_DIR / "{subject}/3_nonrig.flag"
     params:
+        warped=lambda wildcards: PROCESS_DIR / f"{wildcards.subject}/warped_elastic.nii.gz",
+        fixed=lambda wildcards: PROCESS_DIR / f"{wildcards.subject}/coregistered_head.nii.gz",
         refined_image=lambda wildcards: PROCESS_DIR / f"{wildcards.subject}/nonlin_image.nii.gz",
         transform_params=lambda wildcards: PROCESS_DIR / f"{wildcards.subject}/nl_transformation_params.txt",
         deformation_field=lambda wildcards: PROCESS_DIR / f"{wildcards.subject}/elastix_deformation_field.h5"
@@ -312,8 +312,8 @@ rule elastix_refinement_rule:
         deformation_field_path.unlink(missing_ok=True)
  
         elastix = sitk.ElastixImageFilter()
-        sitk_fixed = sitk.ReadImage(str(input.fixed))
-        sitk_moving_initial = sitk.ReadImage(str(input.warped))
+        sitk_fixed = sitk.ReadImage(str(params.fixed))
+        sitk_moving_initial = sitk.ReadImage(str(params.warped))
         elastix.SetFixedImage(sitk_fixed)
         elastix.SetMovingImage(sitk_moving_initial)
 
