@@ -26,4 +26,4 @@ slicer_options:
 sutures_model: /home/varhai/PRIMUS/data/83_BIOINFORMATICS/Igor/workdir/best_model_sutures_gen.pth
 side_model : /home/varhai/PRIMUS/data/83_BIOINFORMATICS/Igor/mouse_skull_workdir/side_model_detect.pth
 side_ref_xml : /home/varhai/PRIMUS/data/83_BIOINFORMATICS/Igor/reference_image/oriented_image_side.xml
-body_part_detection_top_model: /home/varhai/mouse_full_body/models/top_model.pth
+body_part_detection_top_model: /home/varhai/PRIMUS/data/83_BIOINFORMATICS/Igor/full_body_workdir/top_model.pth

@@ -65,8 +65,10 @@ rule extract_head_nifti:
 
         data = img.get_fdata()
         x0, y0, x1, y1 = map(int, bbox)
-        head = data[x0:x1, :, y0:y1].astype(np.uint8)
+        # add some margin
+        y_start = max(0, y0 - 10)
+        y_end = min(data.shape[2], y1 + 10)
+        head = data[x0:x1, :, y_start:y_end].astype(np.uint8)
 
         head_img = nib.Nifti1Image(head, affine)
         nib.save(head_img, str(output.out))
-

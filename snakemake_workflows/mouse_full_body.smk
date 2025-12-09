@@ -300,7 +300,12 @@ def flip_image(im_file_in: str, im_file_out: str, axis):
 
 
 SRC_SUBJECTS = process_cohort_folder()
-SRC_SUBJECTS = [fold.name for fold in SRC_SUBJECTS]
+SRC_SUBJECTS = [fold.name for fold in SRC_SUBJECTS if fold.is_dir() and (len(list(fold.iterdir())) > 0)]
+
+SRC_SUBJECTS = [x for x in SRC_SUBJECTS if ('_' in x)]
+SRC_SUBJECTS = [x for x in SRC_SUBJECTS if ('BMD' not in x) and ('!' not in x)]
+SRC_SUBJECTS = [x for x in SRC_SUBJECTS if x.startswith('_') is False]
+
 #make_output folder
 
 OUT_FOLD = PROCESS_DIR / "full_body_workdir"
