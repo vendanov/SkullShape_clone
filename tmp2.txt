@@ -1,0 +1,200 @@
+
+    ani = animation.FuncAnimation(fig, animate, frames=10)
+    ani.save(output_gif_file, writer='pillow', fps=1)
+    plt.close(fig)
+
+
+def produce_gif_ttest_comparison(ref_mesh: vtk.vtkPolyData,
+                                    t_test_results: list,
+                                    output_gif_file: str):
+    from matplotlib import cm, animation
+    from mpl_toolkits.mplot3d import Axes3D
+
+        # Extract points and faces
+    print("ref_mesh", ref_mesh)
+    pts, faces = read_vtk_polydata_points_faces(ref_mesh)
+    print("PTS", pts.shape)
+    print("FACES", faces.shape)
+
+        # Color map based on p-value < 0.05
+    p_values = np.array([p.pvalue for p in t_test_results])
+
+    colors =  [ 0.0 if all(p_values[p,:] > 0.05) else 1.0 for p in range(p_values.shape[0])]
+        #
+    print( "Ratio of significant p-values", np.sum(colors) / len(colors))
+    #colors = np.where(p_values < 0.05, 1.0, 0.0)  # binary coloring
+    face_colors = np.array([colors[face[0]] for face in faces])
+
+    fig = plt.figure(figsize=(8, 6), dpi=300)
+    ax = fig.add_subplot(111, projection='3d')
+    cmap = cm.get_cmap('coolwarm')
+
+    norm = plt.Normalize(0, 1)
+    trisurf = ax.plot_trisurf(pts[:, 0], pts[:, 1], pts[:, 2],
+                            triangles=faces,
+                            linewidth=0.2,
+                            antialiased=True)
+    from matplotlib.colors import ListedColormap
+
+
+    cmap = ListedColormap(['lightgray', 'crimson'])  # 0 = gray, 1 = red
+    norm = plt.Normalize(0, 1)
+    print(len(colors))
+    print("colors[0]", colors[0])
+    trisurf.set_fc(cmap(norm(colors)))
+
+    ax.set_box_aspect([np.ptp(i) for i in [ax.get_xlim(), ax.get_ylim(), ax.get_zlim()]])
+    #ax.axis('off')
+    sm = cm.ScalarMappable(cmap=cmap, norm=norm)
+    sm.set_array([])
+    cbar = plt.colorbar(sm, ax=ax, shrink=0.5, pad=0.1)
+    cbar.set_ticks([0, 1])
+    cbar.set_ticklabels(['n.s.', 'p < 0.05'])
+    cbar.set_label("T-test p-value threshold")
+
+    def animate(frame):
+        ax.view_init(elev=20, azim=frame * 36)
+
+    ani = animation.FuncAnimation(fig, animate, frames=10)
+    ani.save(output_gif_file, writer='pillow', fps=1)
+    plt.close(fig)
+
+
+def produce_gif_mean_diff(ref_mesh: vtk.vtkPolyData,
+                          mean_diff: list,
+                            output_gif_file: str):
+    from matplotlib import cm, animation
+    from mpl_toolkits.mplot3d import Axes3D
+
+    mean_norms = np.linalg.norm(mean_diff,axis=1)
+    print(mean_norms)
+
+    pts, faces = read_vtk_polydata_points_faces(ref_mesh)
+
+    # Назначаем цвет каждой ячейке (по норме)
+    face_colors = mean_norms  # one value per face
+    p95 = np.percentile(mean_norms, 95)
+
+    # Обрезаем: всё выше 95-го → приравниваем к 95-му
+    mean_norms_clipped = np.clip(mean_norms, a_min=None, a_max=p95)
+    cmap = cm.get_cmap('viridis')
+    norm = plt.Normalize(vmin=face_colors.min(), vmax=face_colors.max())
+
+    # Создаём фигуру и ось
+    fig = plt.figure(figsize=(8, 6), dpi=300)
+    ax = fig.add_subplot(111, projection='3d')
+
+    trisurf = ax.plot_trisurf(pts[:, 0], pts[:, 1], pts[:, 2],
+                              triangles=faces,
+                              linewidth=0.2,
+                              antialiased=True)
+    trisurf.set_facecolors(cmap(norm(face_colors)))
+
+    # Цветовая шкала
+    sm = cm.ScalarMappable(norm=norm, cmap=cmap)
+    sm.set_array(mean_norms)  # НЕ пустой массив!
+    plt.colorbar(sm, ax=ax)
+
+
+    # Настройка сцены
+    ax.set_box_aspect([np.ptp(pts[:, 0]), np.ptp(pts[:, 1]), np.ptp(pts[:, 2])])
+    #ax.axis('off')
+
+    # Анимация вращения
+    def animate(frame):
+        ax.view_init(elev=20, azim=frame * 36)
+
+    ani = animation.FuncAnimation(fig, animate, frames=10)
+    ani.save(output_gif_file, writer='pillow', fps=1)
+    plt.close(fig)
+
+
+def uproduce_gif_std(ref_mesh: vtk.vtkPolyData,
+                    std_results: list,
+                    output_gif_file: str,
+                     upper_limit: Optional[float] = None):
+
+    from matplotlib import cm, animation
+    from mpl_toolkits.mplot3d import Axes3D
+    std_norms = np.linalg.norm(std_results,axis=1)
+    print(std_norms)
+    pts, faces = read_vtk_polydata_points_faces(ref_mesh)
+    # Назначаем цвет каждой ячейке (по норме)
+    face_colors = std_norms  # one value per face
+    p95 = np.percentile(std_norms, 95)
+    # Обрезаем: всё выше 95-го → приравниваем к 95-му
+    std_norms_clipped = np.clip(std_norms, a_min=None, a_max=p95)
+    cmap = cm.get_cmap('viridis')
+    if upper_limit is not None:
+        norm = plt.Normalize(vmin=0, vmax=upper_limit)
+    else:
+        norm = plt.Normalize(vmin=0, vmax=face_colors.max())
+
+    # Создаём фигуру и ось
+
+    fig = plt.figure(figsize=(8, 6), dpi=300)
+    ax = fig.add_subplot(111, projection='3d')
+    trisurf = ax.plot_trisurf(pts[:, 0], pts[:, 1], pts[:, 2],
+                                triangles=faces,
+                                linewidth=0.2,
+                                antialiased=True)
+    trisurf.set_facecolors(cmap(norm(face_colors)))
+    # Цветовая шкала
+    sm = cm.ScalarMappable(norm=norm, cmap=cmap)
+    sm.set_array(std_norms)  # НЕ пустой массив!
+    plt.colorbar(sm, ax=ax)
+    # Настройка сцены
+    ax.set_box_aspect([np.ptp(pts[:, 0]), np.ptp(pts[:, 1]), np.ptp(pts[:, 2])])
+    #ax.axis('off')
+    # Анимация вращения
+    def animate(frame):
+        ax.view_init(elev=20, azim=frame * 36)
+    ani = animation.FuncAnimation(fig, animate, frames=10)
+    ani.save(output_gif_file, writer='pillow', fps=1)
+    plt.close(fig)
+
+
+def compute_and_save_mean_mesh(cohort: Dict[str, vtk.vtkPolyData], output_file: str):
+    """
+    Compute the mean mesh for the given cohort and save it to a file.
+    """
+    # Compute the mean mesh
+    gpa = gpa_new(cohort)
+
+    mean_mesh = compute_mean_mesh(gpa)
+
+    # Save the mean mesh to a file
+    writer = vtk.vtkOBJWriter()
+    writer.SetFileName(output_file)
+    writer.SetInputData(mean_mesh)
+    writer.Write()
+
+def compute_facewise_centroid_std(meshes: Dict[str, vtk.vtkPolyData]) -> np.ndarray:
+    """
+    Compute standard deviation of face centroids across meshes.
+
+    Returns:
+        face_std: np.ndarray of shape (n_faces,), where each value is the std of centroid positions for a face.
+    """
+    mesh_list = list(meshes.values())
+    n_meshes = len(mesh_list)
+    ref_mesh = mesh_list[0]
+    n_faces = ref_mesh.GetNumberOfCells()
+
+    # (n_faces, n_meshes, 3): центроиды каждой ячейки в каждом меше
+    face_centroids = np.zeros((n_faces, n_meshes, 3), dtype=np.float32)
+
+    for m_idx, mesh in enumerate(mesh_list):
+        for f_idx in range(n_faces):
+            cell = mesh.GetCell(f_idx)
+            pts = [np.array(mesh.GetPoint(cell.GetPointId(i))) for i in range(cell.GetNumberOfPoints())]
+            centroid = np.mean(pts, axis=0)
+            face_centroids[f_idx, m_idx] = centroid
+    print("fcs", face_centroids.shape)
+    # std по каждой координате, потом норма → shape: (n_faces,)
+    face_std = np.std(face_centroids, axis=1)  # → (n_faces, 3)
+    #face_std_norm = np.linalg.norm(face_std, axis=1)  # → (n_faces,)
+
+    return face_std
+
+

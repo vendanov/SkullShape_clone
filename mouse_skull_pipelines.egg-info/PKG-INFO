@@ -1,0 +1,63 @@
+Metadata-Version: 2.4
+Name: mouse_skull_pipelines
+Version: 0.1.0
+Summary: A pipeline for analyzing mouse skull data using Snakemake workflows and machine learning models.
+Home-page: https://github.com/yourusername/mouseSkullPipelines
+Author: Your Name
+Author-email: your.email@example.com
+Project-URL: Bug Reports, https://github.com/yourusername/mouseSkullPipelines/issues
+Project-URL: Source, https://github.com/yourusername/mouseSkullPipelines
+Classifier: Programming Language :: Python :: 3.11
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Operating System :: OS Independent
+Requires-Python: >=3.9
+Description-Content-Type: text/markdown
+Requires-Dist: numpy
+Requires-Dist: pandas
+Requires-Dist: matplotlib
+Requires-Dist: scikit-learn
+Requires-Dist: snakemake
+Provides-Extra: dev
+Requires-Dist: pytest; extra == "dev"
+Requires-Dist: flake8; extra == "dev"
+Requires-Dist: black; extra == "dev"
+Provides-Extra: docs
+Requires-Dist: sphinx; extra == "docs"
+Requires-Dist: mkdocs; extra == "docs"
+Dynamic: author
+Dynamic: author-email
+Dynamic: classifier
+Dynamic: description
+Dynamic: description-content-type
+Dynamic: home-page
+Dynamic: project-url
+Dynamic: provides-extra
+Dynamic: requires-dist
+Dynamic: requires-python
+Dynamic: summary
+
+# Project Name
+
+## Description
+
+[Provide a brief description of your project.]
+
+## Installation
+
+[Provide instructions on how to install and set up your project.]
+
+## Usage
+
+[Provide instructions on how to use your project.]
+
+## Contributing
+
+[Provide guidelines for contributing to your project.]
+
+## License
+
+[Specify the license under which your project is distributed.]
+
+## Contact
+
+[Provide your contact information for any inquiries or support.]

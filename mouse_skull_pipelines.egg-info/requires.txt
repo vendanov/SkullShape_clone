@@ -1,0 +1,14 @@
+numpy
+pandas
+matplotlib
+scikit-learn
+snakemake
+
+[dev]
+pytest
+flake8
+black
+
+[docs]
+sphinx
+mkdocs

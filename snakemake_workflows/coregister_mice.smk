@@ -1,5 +1,6 @@
 import os
 import pathlib
+import shutil
 import subprocess
 from pathlib import Path
 from typing import Union, Tuple
@@ -168,19 +169,34 @@ def register_flip(floating_image: Union[str,pathlib.Path],
     :return:
     """
     if inaff is None:
-        cmd = "reg_aladin -ref {refim} -rmask {rmask} -flo {flim} -fmask {fmask}".format(refim=reference_image,
-            rmask=ref_mask,flim=floating_image,fmask=float_mask)
-        cmd += " -speeeeed -cog -res " + str(outputs[0])
-        cmd += " -aff " + outputs[1]
+        cmd = [
+            "reg_aladin",
+            "-ref", str(reference_image),
+            "-rmask", str(ref_mask),
+            "-flo", str(floating_image),
+            "-fmask", str(float_mask),
+            "-speeeeed",
+            "-cog",
+            "-res", str(outputs[0]),
+            "-aff", str(outputs[1]),
+        ]
 
     else:
-        cmd = "reg_aladin -ref {refim} -rmask {rmask} -flo {flim} -fmask {fmask}".format(refim=reference_image,
-            rmask=ref_mask,flim=floating_image,fmask=float_mask)
-        cmd += " -speeeeed -cog -res " + str(outputs[0])
-        cmd += " -aff " + str(outputs[1]) + " -inaff " + str(inaff)
+        cmd = [
+            "reg_aladin",
+            "-ref", str(reference_image),
+            "-rmask", str(ref_mask),
+            "-flo", str(floating_image),
+            "-fmask", str(float_mask),
+            "-speeeeed",
+            "-cog",
+            "-res", str(outputs[0]),
+            "-aff", str(outputs[1]),
+            "-inaff", str(inaff),
+        ]
 
 
-    subprocess.call(shlex.split(cmd))
+    subprocess.run(cmd, check=True)
 
     #shell(cmd)
     #return asses_registration_quality(outputs[0],reference_image)
@@ -255,10 +271,16 @@ def change_orientation( refim_file, flo_im_file, flo_mask_file=None):
 def non_rigid_registration(flo_im: str, ref_im: str, out_transform: str, out_image: str, param_file:str):
     # Reading
     fold = pathlib.Path(out_image).parent
-    cmd = f"elastix -f {ref_im} -m {flo_im} -p {param_file} -out {str(fold)}"
-    shell(cmd)
-    shell(f"mv -f {str(fold/ 'result.0.nii.gz')} {out_image}")
-    shell(f"mv -f {str(fold/ 'TransformParameters.0.txt')} {out_transform}")
+    cmd = [
+        "elastix",
+        "-f", str(ref_im),
+        "-m", str(flo_im),
+        "-p", str(param_file),
+        "-out", str(fold),
+    ]
+    subprocess.run(cmd, check=True)
+    shutil.move(str(fold / "result.0.nii.gz"), str(out_image))
+    shutil.move(str(fold / "TransformParameters.0.txt"), str(out_transform))
 
 
 def transform_mesh_points(mesh_points, transform):
@@ -464,8 +486,8 @@ rule linear_coregistration:
         flip_image(input[0], str(proces_folder / "oriented_3.nii.gz"),axis=(0,1))
         flip_image(input[1],str(proces_folder / "oriented_m_3.nii.gz"),axis=(0, 1))
 
-        shell(f"cp -f {input[0]} {str(proces_folder / 'oriented_or.nii.gz')}")
-        shell(f"cp -f {input[1]} {str(proces_folder / 'oriented_m_or.nii.gz')}")
+        shutil.copy(str(input[0]), str(proces_folder / "oriented_or.nii.gz"))
+        shutil.copy(str(input[1]), str(proces_folder / "oriented_m_or.nii.gz"))
 
 
         register_flip(str(proces_folder / "oriented_3.nii.gz")
@@ -514,16 +536,16 @@ rule linear_coregistration:
 
         name = Path(final_coreg_im).name.split(".")[0]
 
-        shell(f"mv -f {final_coreg_im} {output[0]}")
-        shell(f"mv -f {str(proces_folder/(name + '.mat'))} {output[1]}")
+        shutil.move(str(final_coreg_im), str(output[0]))
+        shutil.move(str(proces_folder/(name + '.mat')), str(output[1]))
 
         ## remove temp files
         name_id = Path(subject_test[0][0]).name.split("_")[1]
-        shell(f"rm -f {str(proces_folder / ('oriented_m_' + name_id + '.nii.gz'))}")
-        shell(f"rm -f {str(proces_folder / ('oriented_' + name_id + '.nii.gz'))}")
+        shell(f"rm -f {shlex.quote(str(proces_folder / ('oriented_m_' + name_id + '.nii.gz')))}")
+        shell(f"rm -f {shlex.quote(str(proces_folder / ('oriented_' + name_id + '.nii.gz')))}")
 
-        shell(f"rm -rf {str(proces_folder / ('oriented_' ))}*")
-        shell(f"rm -rf {str(proces_folder / ('coreg_'))}*")
+        shell(f'rm -rf -- "{str(proces_folder / "oriented_")}"*')
+        shell(f'rm -rf -- "{str(proces_folder / "coreg_")}"*')
 
 
 
@@ -550,18 +572,26 @@ rule inverse_transform_mesh_rule:
         dir1name = str(pathlib.Path(input[0]).parent)
 
         #generate deformation field
-        cmd = f"transformix -tp {input[0]} -out {dir1name} -def all"
-
-        shell (cmd)
+        cmd = ["transformix", "-tp", str(input[0]), "-out", dir1name, "-def", "all"]
+        subprocess.run(cmd, check=True)
         or_ref_mesh = REF_IMAGE / "oriented_mesh.obj"
         print(or_ref_mesh)
 
         def_field_file  = dir1name + os.sep + "deformationField.nii.gz"
         ###deform original mesh
 
-        cmd = f"xvfb-run -a  {SLICER_CORE} --python-script {MESH_TRANSFORM_SCRIPT} {def_field_file} {or_ref_mesh} {output[0]}  --testing --no-splash --no-main-window"
-        shell(cmd)
-        shell("rm -rf " + def_field_file )
+        cmd = [
+            "xvfb-run", "-a",
+            SLICER_CORE,
+            "--python-script", MESH_TRANSFORM_SCRIPT,
+            def_field_file, str(or_ref_mesh), str(output[0]),
+            "--testing", "--no-splash", "--no-main-window",
+        ]
+        subprocess.run(cmd, check=True)
+        try:
+            os.remove(def_field_file)
+        except FileNotFoundError:
+            pass
 
 import fsl.data.image as flim
 

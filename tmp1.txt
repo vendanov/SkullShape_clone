@@ -1,0 +1,200 @@
+
+import argparse
+import os
+import shutil
+import subprocess
+import sys
+from typing import Dict, Optional
+import scipy.io as scio
+import numpy as np
+import vtk
+import yaml
+
+import tempfile
+
+from pathlib import Path
+
+from matplotlib import pyplot as plt
+from sympy.physics.quantum.identitysearch import scipy
+
+from mouse_skull_pipelines.scripts.gpa import gpa_new, compute_mean_mesh
+
+def clean_after_registration(cohort_folder: Path):
+    """
+    Clean the cohort folder after registration.
+    """
+
+    files_to_leave = ["head_affine_registered.obj", "4_inv_mesh.flag","ct_image.nii.gz",
+                      "nl_transformation_params.txt" , "affine_head.txt"
+                      ]
+
+    # itearate over the files in the cohort folder and subfolders
+    for root, dirs, files in os.walk(cohort_folder):
+        for file in files:
+            # if the file is not in the list of files to leave, remove it
+            if file not in files_to_leave:
+                file_path = os.path.join(root, file)
+                print(f"Removing {file_path}")
+                os.remove(file_path)
+
+def registration_to_reference(cohort_folder: Path, reference_mouse):
+
+    """
+    Check if the registration is done for the given cohort folder.
+    """
+
+    # read config file
+    # check if the registration is done
+
+    # current file path
+    current_file = Path(__file__).resolve()
+    parent_dir = current_file.parent
+    registration_cfg = parent_dir / 'smk_configs' / 'mouse_skull.yaml'
+
+    script_home = parent_dir / 'snakemake_workflows' / 'generic_coregistration.smk'
+
+    # read yaml file
+
+    with open(registration_cfg, 'r') as file:
+        config = yaml.safe_load(file)
+        config['ref_image_dir'] = str(reference_mouse)
+        config['cohort_dir'] = str(cohort_folder)
+
+        # save the temporary config file
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.yaml') as temp_file:
+
+            try:
+                temp_file.write(yaml.dump(config).encode())
+                temp_file.close()
+                temp_file_path = temp_file.name
+                print(f"Temporary config file created at: {temp_file_path}")
+                # run the temporary config file registration
+                # run the registration
+                snakemake_command = f"snakemake --snakefile {script_home} --configfile {temp_file_path} --cores 9  --keep-going"
+                cmd = snakemake_command.split()
+                subprocess.run(cmd, check=True)
+                #clean_after_registration(cohort_folder)
+            except Exception as e:
+                print(f"Error during registration: {e}")
+                print("Please check the config file and the cohort folder.")
+            finally:
+                # remove the temporary config file
+                temp_file.close()
+                os.remove(temp_file.name)
+
+            # remove the temporary config file
+            #os.remove(temp_file_path)
+
+
+
+def compute_2cohort_differences(cohort_1: Dict[str, vtk.vtkPolyData], cohort_2: Dict[str, vtk.vtkPolyData]):
+    """
+    Compute the statistics for the two cohorts.
+    """
+    # Compute the statistics for the two cohorts
+    print("Computing the statistics for the two cohorts")
+    ref_mesh = next(iter(cohort_1.values()))
+    n_cells = ref_mesh.GetNumberOfCells()
+    def compute_cell_means(mesh: vtk.vtkPolyData) -> np.ndarray:
+        means = np.zeros((n_cells, 3))
+        for i in range(n_cells):
+            cell = ref_mesh.GetCell(i)
+            pt_coords = [mesh.GetPoint(cell.GetPointId(j))
+                         for j in range(cell.GetNumberOfPoints())]
+            means[i] = np.mean(pt_coords, axis=0)
+        return means
+
+    cohort_1_means = {key: compute_cell_means(mesh) for key, mesh in cohort_1.items()}
+    cohort_2_means = {key: compute_cell_means(mesh) for key, mesh in cohort_2.items()}
+
+    # Compute the differences kolmogorov-smirnov test differences between the two cohorts for each cell
+
+    ks_results = []
+    t_test_results = []
+    mean_diffs = []
+    for i in range(n_cells):
+        cells_1 = [cohort_1_means[key][i] for key in cohort_1_means.keys()]
+        cells_2 = [cohort_2_means[key][i] for key in cohort_2_means.keys()]
+        cells_1 = np.array(cells_1)
+        cells_2 = np.array(cells_2)
+
+        p_vals = []
+
+        for j in range(3):
+            _, tmp = scipy.stats.ks_2samp(cells_1[:, j], cells_2[:, j], alternative='two-sided')
+            p_vals.append(tmp)
+
+        ttest = scipy.stats.ttest_ind(cells_1, cells_2, axis=0)
+        mean_diff = np.mean(cells_1, axis=0) - np.mean(cells_2, axis=0)
+        print("Mean difference", mean_diff)
+        print("ttest", ttest)
+        t_test_results.append(ttest)
+        mean_diffs.append(mean_diff)
+        ks_results.append((None, p_vals))
+        #ks_stat, p_value = scipy.stats.ks_2samp(cells_1, cells_2, alternative='two-sided')
+        #ks_results.append((ks_stat, p_value))
+        # Save the results to a fi
+
+    return {"ks": ks_results, "t_test": t_test_results, "mean_diff": mean_diffs}
+
+
+def read_vtk_polydata_points_faces(polydata: vtk.vtkPolyData):
+    points = np.array([polydata.GetPoint(i) for i in range(polydata.GetNumberOfPoints())])
+    faces = []
+    for i in range(polydata.GetNumberOfCells()):
+        cell = polydata.GetCell(i)
+        ids = [cell.GetPointId(j) for j in range(cell.GetNumberOfPoints())]
+        if len(ids) == 3:  # only triangles
+            faces.append(ids)
+    return points, np.array(faces)
+
+def produce_gif_coh_comparison(ref_mesh: vtk.vtkPolyData,
+                               ks_results: list,
+                               output_gif_file: str):
+    from matplotlib import cm, animation
+    from mpl_toolkits.mplot3d import Axes3D
+
+    # Extract points and faces
+    print("ref_mesh", ref_mesh)
+    pts, faces = read_vtk_polydata_points_faces(ref_mesh)
+    print("PTS", pts.shape)
+    print("FACES", faces.shape)
+
+    # Color map based on p-value < 0.05
+    p_values = np.array([p for _, p in ks_results])
+
+    colors =  [ 0.0 if all(p_values[p,:] > 0.05) else 1.0 for p in range(p_values.shape[0])]
+    #
+    print( "Ratio of significant p-values", np.sum(colors) / len(colors))
+    #colors = np.where(p_values < 0.05, 1.0, 0.0)  # binary coloring
+    face_colors = np.array([colors[face[0]] for face in faces])
+
+    fig = plt.figure(figsize=(8, 6), dpi=300)
+    ax = fig.add_subplot(111, projection='3d')
+    cmap = cm.get_cmap('coolwarm')
+
+    norm = plt.Normalize(0, 1)
+    trisurf = ax.plot_trisurf(pts[:, 0], pts[:, 1], pts[:, 2],
+                               triangles=faces,
+                               linewidth=0.2,
+                               antialiased=True)
+    from matplotlib.colors import ListedColormap
+
+
+    cmap = ListedColormap(['lightgray', 'crimson'])  # 0 = gray, 1 = red
+    norm = plt.Normalize(0, 1)
+    print(len(colors))
+    print("colors[0]", colors[0])
+    trisurf.set_fc(cmap(norm(colors)))
+
+    ax.set_box_aspect([np.ptp(i) for i in [ax.get_xlim(), ax.get_ylim(), ax.get_zlim()]])
+    #ax.axis('off')
+    sm = cm.ScalarMappable(cmap=cmap, norm=norm)
+    sm.set_array([])
+    cbar = plt.colorbar(sm, ax=ax, shrink=0.5, pad=0.1)
+    cbar.set_ticks([0, 1])
+    cbar.set_ticklabels(['n.s.', 'p < 0.05'])
+    cbar.set_label('Kolmogorov–Smirnov p-value threshold')
+
+    def animate(frame):
+        ax.view_init(elev=20, azim=frame * 36)

@@ -1,0 +1,8 @@
+[console_scripts]
+clean-mouse-skull = clean_mouse_skull:main
+convert-files = convert_files:main
+run-dxa-fantoms = run_dxa_fantoms:main
+run-mouse-skull = main:main
+run-mouse-sutures-train = run_mouse_sutures_train:main
+run-mouseskull = run_mouseskull:main
+run-tmd-bmd = run_tmd_bmd:main
