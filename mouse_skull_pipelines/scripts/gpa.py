@@ -1,6 +1,6 @@
 import pickle
 from pathlib import Path
-from typing import Dict
+from typing import Dict, Union
 import numpy as np
 from tqdm.auto import tqdm
 #from concurrent.futures import ProcessPoolExecutor
@@ -70,7 +70,13 @@ def gpa(meshes: Dict[str, np.ndarray], max_iterations=100, threshold=1e-14):
     return reference_mesh, aligned_meshes, result_shapes
 
 
-def gpa_new(meshes: Dict[str, Path],modes: str = "similarity"):
+_MESH_CACHE: Dict[str, vtk.vtkPolyData] = {}
+
+
+def gpa_new(meshes: Dict[str, Union[Path, vtk.vtkPolyData]],
+            modes: str = "similarity",
+            mesh_cache: Dict[str, vtk.vtkPolyData] = _MESH_CACHE,
+            use_cache: bool = False):
     """
     Perform Generalized Procrustes Analysis (GPA) on a set of meshes.
     Args:
@@ -78,13 +84,24 @@ def gpa_new(meshes: Dict[str, Path],modes: str = "similarity"):
     Returns:
 
     """
-    # reading meshes
+    # reading meshes (cache by path to avoid reloading across runs)
     keys = list(meshes.keys())
 
     input_list = vtk.vtkMultiBlockDataSet()
     print(meshes.keys())
     for i, f in enumerate(keys):
-        pd = read_mesh_from_file(meshes[f])
+        mesh_val = meshes[f]
+        if isinstance(mesh_val, vtk.vtkPolyData):
+            pd = mesh_val
+        else:
+            mesh_path = str(mesh_val)
+            if use_cache:
+                pd = mesh_cache.get(mesh_path)
+                if pd is None:
+                    pd = read_mesh_from_file(mesh_path)
+                    mesh_cache[mesh_path] = pd
+            else:
+                pd = read_mesh_from_file(mesh_path)
         input_list.SetBlock(i, pd)
     procrustes = vtk.vtkProcrustesAlignmentFilter()
 

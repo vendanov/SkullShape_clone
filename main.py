@@ -1,5 +1,6 @@
 ﻿
 import argparse
+import csv
 import os
 import shutil
 import subprocess
@@ -797,10 +798,13 @@ def compare_cohorts_per_subject(cohort_1: str,
 
     # now per each mouse in query, compute GPA with reference cohort
 
+    area_threshold = 5.0
+    area_rows = []
+
     for key, mesh_path in query_cohort_meshes.items():
         print(f"Loading query mesh {key} from {mesh_path}")
         
-        gpa_all = gpa_new({**ref_cohort_meshes, key: mesh_path}, modes="rigid")
+        gpa_all = gpa_new({**ref_cohort_meshes, key: mesh_path}, modes="rigid",use_cache=True)
 
         # Build reference cohort (aligned) and the aligned key mesh
         aligned_key_mesh: vtk.vtkPolyData = gpa_all[key]
@@ -850,6 +854,18 @@ def compare_cohorts_per_subject(cohort_1: str,
         # Aggregate per face as RMS over the face's vertices
         mahal = np.sqrt(d2_pts[faces].mean(axis=1))
 
+        tri_pts = pts_key[faces]
+        vec1 = tri_pts[:, 1, :] - tri_pts[:, 0, :]
+        vec2 = tri_pts[:, 2, :] - tri_pts[:, 0, :]
+        face_areas = 0.5 * np.linalg.norm(np.cross(vec1, vec2), axis=1)
+        total_area = float(face_areas.sum())
+        area_over = float(face_areas[mahal > area_threshold].sum())
+        area_percent = 100.0 * area_over / total_area if total_area > 0 else 0.0
+        area_rows.append({
+            "subject": key,
+            "area_percent_mahal_gt_5": area_percent,
+        })
+
         # Produce rotating GIF of Mahalanobis distances
         out_path = res_dir_new / f"{key}_to_{ref_distribution}_mahalanobis.gif"
         produce_gif_scalar_map(aligned_key_mesh, mahal, str(out_path),
@@ -860,6 +876,14 @@ def compare_cohorts_per_subject(cohort_1: str,
 
 
         print(f"Saved Mahalanobis distance GIF for {key} at {out_path}")
+
+    if area_rows:
+        area_csv = res_dir_new / "mahalanobis_area_gt_5.csv"
+        with open(area_csv, "w", encoding="utf-8", newline="") as fh:
+            writer = csv.DictWriter(fh, fieldnames=["subject", "area_percent_mahal_gt_5"])
+            writer.writeheader()
+            writer.writerows(area_rows)
+        print(f"Saved Mahalanobis area summary at {area_csv}")
 
 
 def compare_cohorts(cohort_1: str, cohort_2: str, reference_mouse: str, result_dir: str):
