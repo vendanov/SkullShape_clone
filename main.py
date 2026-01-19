@@ -800,6 +800,7 @@ def compare_cohorts_per_subject(cohort_1: str,
 
     area_threshold = 5.0
     area_rows = []
+    mahal_rows = []
 
     for key, mesh_path in query_cohort_meshes.items():
         print(f"Loading query mesh {key} from {mesh_path}")
@@ -865,6 +866,12 @@ def compare_cohorts_per_subject(cohort_1: str,
             "subject": key,
             "area_percent_mahal_gt_5": area_percent,
         })
+        for face_idx, mahal_val in enumerate(mahal):
+            mahal_rows.append({
+                "subject": key,
+                "face_index": face_idx,
+                "mahalanobis": float(mahal_val),
+            })
 
         # Produce rotating GIF of Mahalanobis distances
         out_path = res_dir_new / f"{key}_to_{ref_distribution}_mahalanobis.gif"
@@ -884,6 +891,14 @@ def compare_cohorts_per_subject(cohort_1: str,
             writer.writeheader()
             writer.writerows(area_rows)
         print(f"Saved Mahalanobis area summary at {area_csv}")
+
+    if mahal_rows:
+        mahal_csv = res_dir_new / "mahalanobis_per_face.csv"
+        with open(mahal_csv, "w", encoding="utf-8", newline="") as fh:
+            writer = csv.DictWriter(fh, fieldnames=["subject", "face_index", "mahalanobis"])
+            writer.writeheader()
+            writer.writerows(mahal_rows)
+        print(f"Saved Mahalanobis per-face values at {mahal_csv}")
 
 
 def compare_cohorts(cohort_1: str, cohort_2: str, reference_mouse: str, result_dir: str):
