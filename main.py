@@ -20,6 +20,7 @@ from matplotlib import pyplot as plt
 from sympy.physics.quantum.identitysearch import scipy
 
 from mouse_skull_pipelines.scripts.gpa import gpa_new, compute_mean_mesh
+from mouse_skull_pipelines.scripts.mesh_algorithms import read_mesh_from_file
 
 def clean_after_registration(cohort_folder: Path):
     """
@@ -801,99 +802,138 @@ def compare_cohorts_per_subject(cohort_1: str,
     area_threshold = 5.0
     area_rows = []
     mahal_rows = []
+    area_csv = res_dir_new / "mahalanobis_area_gt_5.csv"
+    mahal_csv = res_dir_new / "mahalanobis_per_face.csv"
+    cached_area = {}
+    cached_mahal = {}
+    if area_csv.exists() and mahal_csv.exists():
+        with open(area_csv, "r", encoding="utf-8", newline="") as fh:
+            reader = csv.DictReader(fh)
+            for row in reader:
+                subject = row["subject"]
+                area_rows.append({
+                    "subject": subject,
+                    "area_percent_mahal_gt_5": float(row["area_percent_mahal_gt_5"]),
+                })
+                cached_area[subject] = float(row["area_percent_mahal_gt_5"])
+        with open(mahal_csv, "r", encoding="utf-8", newline="") as fh:
+            reader = csv.DictReader(fh)
+            for row in reader:
+                subject = row["subject"]
+                face_idx = int(row["face_index"])
+                val = float(row["mahalanobis"])
+                mahal_rows.append({
+                    "subject": subject,
+                    "face_index": face_idx,
+                    "mahalanobis": val,
+                })
+                if subject not in cached_mahal:
+                    cached_mahal[subject] = {}
+                cached_mahal[subject][face_idx] = val
 
     for key, mesh_path in query_cohort_meshes.items():
         print(f"Loading query mesh {key} from {mesh_path}")
-        
-        gpa_all = gpa_new({**ref_cohort_meshes, key: mesh_path}, modes="rigid",use_cache=True)
+        gif_path = res_dir_new / f"{key}_to_{ref_distribution}_mahalanobis.gif"
+        mahal = None
+        aligned_key_mesh = None
 
-        # Build reference cohort (aligned) and the aligned key mesh
-        aligned_key_mesh: vtk.vtkPolyData = gpa_all[key]
-        aligned_ref_meshes = [gpa_all[k] for k in gpa_all.keys() if k != key]
+        if cached_mahal:
+            if key in cached_mahal:
+                max_idx = max(cached_mahal[key].keys())
+                mahal = np.zeros(max_idx + 1, dtype=np.float64)
+                for idx, val in cached_mahal[key].items():
+                    mahal[idx] = val
+        else:
+            gpa_all = gpa_new({**ref_cohort_meshes, key: mesh_path}, modes="rigid", use_cache=True)
 
-        # Extract faces once (assume identical topology across aligned meshes)
-        pts_key, faces = read_vtk_polydata_points_faces(aligned_key_mesh)
-        n_faces = faces.shape[0]
+            # Build reference cohort (aligned) and the aligned key mesh
+            aligned_key_mesh = gpa_all[key]
+            aligned_ref_meshes = [gpa_all[k] for k in gpa_all.keys() if k != key]
 
-        # Use per-point empirical covariance (not face centroids)
-        from sklearn.covariance import EmpiricalCovariance
-        # Stack reference meshes' points: (n_ref, n_points, 3)
-        ref_points_stack = np.stack([read_vtk_polydata_points_faces(m)[0] for m in aligned_ref_meshes], axis=0)
-        n_ref, n_points, _ = ref_points_stack.shape
+            # Extract faces once (assume identical topology across aligned meshes)
+            pts_key, faces = read_vtk_polydata_points_faces(aligned_key_mesh)
 
-        # Fit EmpiricalCovariance per point with light trimming (99th percentile)
-        mu_pts = np.zeros((n_points, 3), dtype=np.float64)
-        prec_pts = np.zeros((n_points, 3, 3), dtype=np.float64)
-        eps = 1e-6
-        for p in range(n_points):
-            X = ref_points_stack[:, p, :]
-            if n_ref >= 2:
-                emp = EmpiricalCovariance()
-                emp.fit(X)
-                md = emp.mahalanobis(X)
-                thr = np.percentile(md, 99.0)
-                keep = md < thr
-                if keep.sum() >= 2:
-                    X = X[keep]
+            # Use per-point empirical covariance (not face centroids)
+            from sklearn.covariance import EmpiricalCovariance
+            # Stack reference meshes' points: (n_ref, n_points, 3)
+            ref_points_stack = np.stack(
+                [read_vtk_polydata_points_faces(m)[0] for m in aligned_ref_meshes], axis=0
+            )
+            n_ref, n_points, _ = ref_points_stack.shape
+
+            # Fit EmpiricalCovariance per point with light trimming (99th percentile)
+            mu_pts = np.zeros((n_points, 3), dtype=np.float64)
+            prec_pts = np.zeros((n_points, 3, 3), dtype=np.float64)
+            eps = 1e-6
+            for p in range(n_points):
+                X = ref_points_stack[:, p, :]
+                if n_ref >= 2:
+                    emp = EmpiricalCovariance()
                     emp.fit(X)
-                    mu_pts[p] = emp.location_
-                    prec_pts[p] = emp.precision_
-                    continue
-            # Fallback if insufficient refs after trimming
-            mu_p = X.mean(axis=0)
-            C = np.cov(X, rowvar=False) if n_ref > 1 else np.eye(3) * eps
-            C = np.asarray(C, dtype=np.float64)
-            C.flat[::4] += eps
-            mu_pts[p] = mu_p
-            prec_pts[p] = np.linalg.pinv(C)
+                    md = emp.mahalanobis(X)
+                    thr = np.percentile(md, 99.0)
+                    keep = md < thr
+                    if keep.sum() >= 2:
+                        X = X[keep]
+                        emp.fit(X)
+                        mu_pts[p] = emp.location_
+                        prec_pts[p] = emp.precision_
+                        continue
+                # Fallback if insufficient refs after trimming
+                mu_p = X.mean(axis=0)
+                C = np.cov(X, rowvar=False) if n_ref > 1 else np.eye(3) * eps
+                C = np.asarray(C, dtype=np.float64)
+                C.flat[::4] += eps
+                mu_pts[p] = mu_p
+                prec_pts[p] = np.linalg.pinv(C)
 
-        # Per-point Mahalanobis for the query subject
-        deltas = pts_key - mu_pts  # (n_points, 3)
-        d2_pts = np.einsum('pi,pij,pj->p', deltas, prec_pts, deltas, optimize=True)
-        d2_pts = np.clip(d2_pts, 0.0, None)
+            # Per-point Mahalanobis for the query subject
+            deltas = pts_key - mu_pts  # (n_points, 3)
+            d2_pts = np.einsum('pi,pij,pj->p', deltas, prec_pts, deltas, optimize=True)
+            d2_pts = np.clip(d2_pts, 0.0, None)
 
-        # Aggregate per face as RMS over the face's vertices
-        mahal = np.sqrt(d2_pts[faces].mean(axis=1))
+            # Aggregate per face as RMS over the face's vertices
+            mahal = np.sqrt(d2_pts[faces].mean(axis=1))
 
-        tri_pts = pts_key[faces]
-        vec1 = tri_pts[:, 1, :] - tri_pts[:, 0, :]
-        vec2 = tri_pts[:, 2, :] - tri_pts[:, 0, :]
-        face_areas = 0.5 * np.linalg.norm(np.cross(vec1, vec2), axis=1)
-        total_area = float(face_areas.sum())
-        area_over = float(face_areas[mahal > area_threshold].sum())
-        area_percent = 100.0 * area_over / total_area if total_area > 0 else 0.0
-        area_rows.append({
-            "subject": key,
-            "area_percent_mahal_gt_5": area_percent,
-        })
-        for face_idx, mahal_val in enumerate(mahal):
-            mahal_rows.append({
+            tri_pts = pts_key[faces]
+            vec1 = tri_pts[:, 1, :] - tri_pts[:, 0, :]
+            vec2 = tri_pts[:, 2, :] - tri_pts[:, 0, :]
+            face_areas = 0.5 * np.linalg.norm(np.cross(vec1, vec2), axis=1)
+            total_area = float(face_areas.sum())
+            area_over = float(face_areas[mahal > area_threshold].sum())
+            area_percent = 100.0 * area_over / total_area if total_area > 0 else 0.0
+            area_rows.append({
                 "subject": key,
-                "face_index": face_idx,
-                "mahalanobis": float(mahal_val),
+                "area_percent_mahal_gt_5": area_percent,
             })
+            for face_idx, mahal_val in enumerate(mahal):
+                mahal_rows.append({
+                    "subject": key,
+                    "face_index": face_idx,
+                    "mahalanobis": float(mahal_val),
+                })
 
         # Produce rotating GIF of Mahalanobis distances
-        out_path = res_dir_new / f"{key}_to_{ref_distribution}_mahalanobis.gif"
-        produce_gif_scalar_map(aligned_key_mesh, mahal, str(out_path),
-                               cmap_name='magma',
-                               clip_percentile=None if fixate_plotting_max is not None else 95.0,
-                               max_value=fixate_plotting_max,
-                               colorbar_label='Mahalanobis distance')
+        if mahal is not None and not gif_path.exists():
+            if aligned_key_mesh is None:
+                aligned_key_mesh = read_mesh_from_file(mesh_path)
+            produce_gif_scalar_map(aligned_key_mesh, mahal, str(gif_path),
+                                   cmap_name='magma',
+                                   clip_percentile=None if fixate_plotting_max is not None else 95.0,
+                                   max_value=fixate_plotting_max,
+                                   colorbar_label='Mahalanobis distance')
+            print(f"Saved Mahalanobis distance GIF for {key} at {gif_path}")
+        elif gif_path.exists():
+            print(f"Skipping GIF for {key}, already exists at {gif_path}")
 
-
-        print(f"Saved Mahalanobis distance GIF for {key} at {out_path}")
-
-    if area_rows:
-        area_csv = res_dir_new / "mahalanobis_area_gt_5.csv"
+    if area_rows and not area_csv.exists():
         with open(area_csv, "w", encoding="utf-8", newline="") as fh:
             writer = csv.DictWriter(fh, fieldnames=["subject", "area_percent_mahal_gt_5"])
             writer.writeheader()
             writer.writerows(area_rows)
         print(f"Saved Mahalanobis area summary at {area_csv}")
 
-    if mahal_rows:
-        mahal_csv = res_dir_new / "mahalanobis_per_face.csv"
+    if mahal_rows and not mahal_csv.exists():
         with open(mahal_csv, "w", encoding="utf-8", newline="") as fh:
             writer = csv.DictWriter(fh, fieldnames=["subject", "face_index", "mahalanobis"])
             writer.writeheader()
