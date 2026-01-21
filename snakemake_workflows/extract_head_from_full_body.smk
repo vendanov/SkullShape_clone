@@ -16,12 +16,15 @@ RESULT_ROOT.mkdir(parents=True, exist_ok=True)
 
 FULL_BODY = ROOT / "full_body_workdir"
 
+CONFIG_SUBJECTS = config.get("subjects") if "subjects" in config else None
 SUBJECTS = [
     d.name for d in FULL_BODY.iterdir()
     if d.is_dir()
     and (d / "full_body_top_classes.xml").exists()
     and (d / "full_body_image_raw.nii.gz").exists()
 ]
+if CONFIG_SUBJECTS:
+    SUBJECTS = [s for s in SUBJECTS if s in set(CONFIG_SUBJECTS)]
 
 rule all:
     input:
@@ -66,9 +69,10 @@ rule extract_head_nifti:
         data = img.get_fdata()
         x0, y0, x1, y1 = map(int, bbox)
         # add some margin
+        y_start_margin = int(config.get("y_start_margin", 40))
         x_start = max(0, x0 - 40)
         x_end = min(data.shape[0], x1 + 40)
-        y_start = max(0, y0 - 40)
+        y_start = max(0, y0 - y_start_margin)
         y_end = min(data.shape[2], y1 + 40)
         head = data[x_start:x_end, :, y_start:y_end].astype(np.uint8)
 

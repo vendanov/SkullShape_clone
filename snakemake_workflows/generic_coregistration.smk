@@ -1,4 +1,4 @@
-﻿import shutil
+import shutil
 import sys
 from pathlib import Path
 import subprocess
@@ -41,7 +41,11 @@ ct_im_name = "ct_image.nii.gz"
 
 print("PROCESS_DIR", PROCESS_DIR)
 
-SRC_SUBJECTS = [fold.name for fold in PROCESS_DIR.iterdir() if (fold.is_dir() and (fold / ct_im_name).exists())  ]
+CONFIG_SUBJECTS = config.get("subjects") if "subjects" in config else None
+SRC_SUBJECTS = [fold.name for fold in PROCESS_DIR.iterdir()
+                if (fold.is_dir() and (fold / ct_im_name).exists())]
+if CONFIG_SUBJECTS:
+    SRC_SUBJECTS = [s for s in SRC_SUBJECTS if s in set(CONFIG_SUBJECTS)]
 
 
 print("src_subects" ,SRC_SUBJECTS)
@@ -312,6 +316,8 @@ rule elastix_refinement_rule:
         deformation_field_path.unlink(missing_ok=True)
  
         elastix = sitk.ElastixImageFilter()
+        elastix.SetLogToConsole(False)
+        elastix.SetLogToFile(False)
         sitk_fixed = sitk.ReadImage(str(params.fixed))
         sitk_moving_initial = sitk.ReadImage(str(params.warped))
         elastix.SetFixedImage(sitk_fixed)

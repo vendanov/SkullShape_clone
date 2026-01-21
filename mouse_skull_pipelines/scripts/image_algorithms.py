@@ -575,7 +575,11 @@ def perform_linear_coregistration(floating_image, reference_image,
     else:
         aff_mat = np.eye(4)
         def copy_image(inp, out):
-            shutil.copy2(str(inp), str(out))
+            src = Path(inp).resolve()
+            dst = Path(out).resolve()
+            if src == dst:
+                return
+            shutil.copy2(str(src), str(dst))
         copy_image(floating_image, out_file)
         copy_image(float_mask, str(proces_folder / "coregistered_mask.nii.gz"))
         # update_image_affine(floating_image, output_head=out_file, affine_matrix=aff_mat)
