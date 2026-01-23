@@ -22,6 +22,11 @@ from sympy.physics.quantum.identitysearch import scipy
 from mouse_skull_pipelines.scripts.gpa import gpa_new, compute_mean_mesh
 from mouse_skull_pipelines.scripts.mesh_algorithms import read_mesh_from_file
 
+APP_VERSION = "mouse_skull_pipelines"
+
+def _get_app_version() -> str:
+    return APP_VERSION
+
 def clean_after_registration(cohort_folder: Path):
     """
     Clean the cohort folder after registration.
@@ -762,52 +767,56 @@ def _find_cohort_root_for_extraction(cohort_dir: Path) -> Optional[Path]:
     return None
 
 
-def _force_recompute_subject(subject: str,
-                             cohort_dir: Path,
-                             reference_mouse: Path,
-                             y_start_margin: int) -> bool:
+def _force_recompute_subjects(subjects: List[str],
+                              cohort_dir: Path,
+                              reference_mouse: Path,
+                              y_start_margin: int) -> bool:
     cohort_root = _find_cohort_root_for_extraction(cohort_dir)
     if cohort_root is None:
-        print(f"[WARN] Cannot recompute {subject}: full_body_workdir not found for {cohort_dir}")
+        print(f"[WARN] Cannot recompute subjects: full_body_workdir not found for {cohort_dir}")
         return False
 
     base_skull_dir = cohort_root / "mouse_skull_workdir"
-    base_subject_dir = base_skull_dir / subject
-    base_ct = base_subject_dir / "ct_image.nii.gz"
-    base_ct.unlink(missing_ok=True)
+    for subject in subjects:
+        base_subject_dir = base_skull_dir / subject
+        base_ct = base_subject_dir / "ct_image.nii.gz"
+        base_ct.unlink(missing_ok=True)
 
     extract_smk = Path(__file__).resolve().parent / "snakemake_workflows" / "extract_head_from_full_body.smk"
     extract_cfg = {
         "cohort_dir": str(cohort_root),
-        "subjects": [subject],
+        "subjects": subjects,
         "y_start_margin": int(y_start_margin),
     }
     run_snakemake_workflow(extract_smk, extract_cfg, cores=1, keep_going=True)
 
     if base_skull_dir in cohort_dir.parents and cohort_dir != base_skull_dir:
-        dst_dir = cohort_dir / subject
-        if dst_dir.exists():
-            shutil.rmtree(dst_dir)
-        shutil.copytree(base_subject_dir, dst_dir, copy_function=shutil.copy2, symlinks=True)
+        for subject in subjects:
+            base_subject_dir = base_skull_dir / subject
+            dst_dir = cohort_dir / subject
+            if dst_dir.exists():
+                shutil.rmtree(dst_dir)
+            shutil.copytree(base_subject_dir, dst_dir, copy_function=shutil.copy2, symlinks=True)
 
-    subject_dir = cohort_dir / subject
-    for fname in [
-        "1_otsu.flag",
-        "2_lin_cor.flag",
-        "3_nonrig.flag",
-        "4_inv_mesh.flag",
-        "head_affine_registered.obj",
-        "bone_coregistration_mask.nii.gz",
-        "coregistered_head.nii.gz",
-        "nonlin_image.nii.gz",
-        "nl_transformation_params.txt",
-    ]:
-        (subject_dir / fname).unlink(missing_ok=True)
+    for subject in subjects:
+        subject_dir = cohort_dir / subject
+        for fname in [
+            "1_otsu.flag",
+            "2_lin_cor.flag",
+            "3_nonrig.flag",
+            "4_inv_mesh.flag",
+            "head_affine_registered.obj",
+            "bone_coregistration_mask.nii.gz",
+            "coregistered_head.nii.gz",
+            "nonlin_image.nii.gz",
+            "nl_transformation_params.txt",
+        ]:
+            (subject_dir / fname).unlink(missing_ok=True)
 
     config = load_yaml_mapping(Path(__file__).resolve().parent / "smk_configs" / "mouse_skull.yaml")
     config["ref_image_dir"] = str(reference_mouse)
     config["cohort_dir"] = str(cohort_dir)
-    config["subjects"] = [subject]
+    config["subjects"] = subjects
     reg_smk = Path(__file__).resolve().parent / "snakemake_workflows" / "generic_coregistration.smk"
     run_snakemake_workflow(reg_smk, config, cores=1, keep_going=True)
     clean_after_registration(cohort_dir)
@@ -817,8 +826,11 @@ def _force_recompute_subject(subject: str,
 def _compute_mahalanobis_for_subject(subject: str,
                                      mesh_path: Path,
                                      ref_cohort_meshes: Dict[str, Path],
-                                     area_threshold: float) -> Tuple[np.ndarray, vtk.vtkPolyData, float]:
-    gpa_all = gpa_new({**ref_cohort_meshes, subject: mesh_path}, modes="rigid", use_cache=True)
+                                     area_threshold: float,
+                                     use_cache: bool = True) -> Tuple[np.ndarray, vtk.vtkPolyData, float]:
+    gpa_input = dict(ref_cohort_meshes)
+    gpa_input[subject] = mesh_path
+    gpa_all = gpa_new(gpa_input, modes="rigid", use_cache=use_cache)
 
     aligned_key_mesh = gpa_all[subject]
     aligned_ref_meshes = [gpa_all[k] for k in gpa_all.keys() if k != subject]
@@ -869,6 +881,12 @@ def _compute_mahalanobis_for_subject(subject: str,
     area_percent = 100.0 * area_over / total_area if total_area > 0 else 0.0
 
     return mahal, aligned_key_mesh, area_percent
+
+
+def _percent_over_threshold(mahal: np.ndarray, threshold: float) -> float:
+    if mahal.size == 0:
+        return 0.0
+    return 100.0 * float(np.sum(mahal > threshold)) / float(len(mahal))
 
 
 def compare_cohorts_per_subject(cohort_1: str,
@@ -930,16 +948,13 @@ def compare_cohorts_per_subject(cohort_1: str,
     cached_area = {}
     cached_mahal = {}
     write_cache = False
+    subject_info = {}
     if area_csv.exists() and mahal_csv.exists():
         with open(area_csv, "r", encoding="utf-8", newline="") as fh:
             reader = csv.DictReader(fh)
             for row in reader:
                 subject = row["subject"]
                 area_val = float(row["area_percent_mahal_gt_5"])
-                area_rows.append({
-                    "subject": subject,
-                    "area_percent_mahal_gt_5": area_val,
-                })
                 cached_area[subject] = area_val
         with open(mahal_csv, "r", encoding="utf-8", newline="") as fh:
             reader = csv.DictReader(fh)
@@ -947,167 +962,125 @@ def compare_cohorts_per_subject(cohort_1: str,
                 subject = row["subject"]
                 face_idx = int(row["face_index"])
                 val = float(row["mahalanobis"])
-                mahal_rows.append({
-                    "subject": subject,
-                    "face_index": face_idx,
-                    "mahalanobis": val,
-                })
                 cached_mahal.setdefault(subject, {})[face_idx] = val
     else:
         write_cache = True
 
     for key, mesh_path in query_cohort_meshes.items():
-        print(f"Loading query mesh {key} from {mesh_path}")
-        gif_path = res_dir_new / f"{key}_to_{ref_distribution}_mahalanobis.gif"
-        mahal = None
-        aligned_key_mesh = None
-        force_gif = False
-
         cached_area_val = cached_area.get(key)
         cached_mahal_vals = cached_mahal.get(key)
-        cached_percent_over = None
-        if cached_mahal_vals:
-            total_faces = len(cached_mahal_vals)
-            if total_faces > 0:
-                over = sum(1 for val in cached_mahal_vals.values() if val > area_threshold)
-                cached_percent_over = 100.0 * over / total_faces
-
-        is_outlier = (
-            cached_area_val is not None
-            and cached_percent_over is not None
-            and should_recompute(cached_area_val, cached_percent_over)
-        )
-        if cached_area_val is not None and cached_percent_over is not None:
-            print(
-                f"[INFO] Outlier check {key}: area_percent={cached_area_val:.2f}, "
-                f"percent_over={cached_percent_over:.2f} (cached)"
-            )
-
-        if is_outlier:
-            cached_area_row = cached_area_val
-            cached_mahal_row = cached_mahal_vals
-            area_rows = [row for row in area_rows if row["subject"] != key]
-            mahal_rows = [row for row in mahal_rows if row["subject"] != key]
-            for margin in range(35, -1, -5):
-                print(f"[INFO] Recomputing outlier {key} with y_start_margin={margin}")
-                if not _force_recompute_subject(key, query_cohort_dir, reference_mouse, margin):
-                    break
-                mahal, aligned_key_mesh, area_percent = _compute_mahalanobis_for_subject(
-                    key, mesh_path, ref_cohort_meshes, area_threshold
-                )
-                area_rows.append({
-                    "subject": key,
-                    "area_percent_mahal_gt_5": area_percent,
-                })
-                for face_idx, mahal_val in enumerate(mahal):
-                    mahal_rows.append({
-                        "subject": key,
-                        "face_index": face_idx,
-                        "mahalanobis": float(mahal_val),
-                    })
-
-                percent_over = 100.0 * float(np.sum(mahal > area_threshold)) / float(len(mahal))
-                print(
-                    f"[INFO] Recompute check {key}: area_percent={area_percent:.2f}, "
-                    f"percent_over={percent_over:.2f}"
-                )
-                if not should_recompute(area_percent, percent_over):
-                    break
-                if margin == 0:
-                    print(f"[WARN] Outlier persists for {key} at y_start_margin=0, stopping.")
-            force_gif = True
-            write_cache = True
-            if mahal is None and cached_area_row is not None and cached_mahal_row:
-                area_rows.append({
-                    "subject": key,
-                    "area_percent_mahal_gt_5": cached_area_row,
-                })
-                for face_idx, mahal_val in cached_mahal_row.items():
-                    mahal_rows.append({
-                        "subject": key,
-                        "face_index": face_idx,
-                        "mahalanobis": float(mahal_val),
-                    })
-        elif cached_mahal_vals is not None and cached_area_val is not None:
-            max_idx = max(cached_mahal_vals.keys())
-            mahal = np.zeros(max_idx + 1, dtype=np.float64)
+        if cached_area_val is not None and cached_mahal_vals is not None:
+            max_idx = max(cached_mahal_vals.keys()) if cached_mahal_vals else -1
+            mahal = np.zeros(max_idx + 1, dtype=np.float64) if max_idx >= 0 else np.array([])
             for idx, val in cached_mahal_vals.items():
                 mahal[idx] = val
-            print(f"[INFO] Skipping {key} (cached, y_start_margin=40)")
+            percent_over = _percent_over_threshold(mahal, area_threshold)
+            subject_info[key] = {
+                "source": "cached",
+                "area_percent": cached_area_val,
+                "percent_over": percent_over,
+                "mahal": mahal,
+                "aligned_mesh": None,
+            }
+            print(
+                f"[INFO] Outlier check {key}: area_percent={cached_area_val:.2f}, "
+                f"percent_over={percent_over:.2f} (cached)"
+            )
         else:
             print(f"[INFO] Computing {key} (y_start_margin=40)")
             mahal, aligned_key_mesh, area_percent = _compute_mahalanobis_for_subject(
                 key, mesh_path, ref_cohort_meshes, area_threshold
             )
-            area_rows.append({
-                "subject": key,
-                "area_percent_mahal_gt_5": area_percent,
-            })
-            for face_idx, mahal_val in enumerate(mahal):
-                mahal_rows.append({
-                    "subject": key,
-                    "face_index": face_idx,
-                    "mahalanobis": float(mahal_val),
-                })
-            percent_over = 100.0 * float(np.sum(mahal > area_threshold)) / float(len(mahal))
-            if should_recompute(area_percent, percent_over):
-                initial_mahal = mahal
-                initial_area = area_percent
-                initial_aligned = aligned_key_mesh
-                area_rows = [row for row in area_rows if row["subject"] != key]
-                mahal_rows = [row for row in mahal_rows if row["subject"] != key]
-                recomputed = False
-                for margin in range(35, -1, -5):
-                    print(f"[INFO] Recomputing outlier {key} with y_start_margin={margin}")
-                    if not _force_recompute_subject(key, query_cohort_dir, reference_mouse, margin):
-                        break
-                    mahal, aligned_key_mesh, area_percent = _compute_mahalanobis_for_subject(
-                        key, mesh_path, ref_cohort_meshes, area_threshold
-                    )
-                    recomputed = True
-                    area_rows.append({
-                        "subject": key,
-                        "area_percent_mahal_gt_5": area_percent,
-                    })
-                    for face_idx, mahal_val in enumerate(mahal):
-                        mahal_rows.append({
-                            "subject": key,
-                            "face_index": face_idx,
-                            "mahalanobis": float(mahal_val),
-                        })
-                    percent_over = 100.0 * float(np.sum(mahal > area_threshold)) / float(len(mahal))
-                    if not should_recompute(area_percent, percent_over):
-                        break
-                    if margin == 0:
-                        print(f"[WARN] Outlier persists for {key} at y_start_margin=0, stopping.")
-                force_gif = True
-                if not recomputed:
-                    mahal = initial_mahal
-                    aligned_key_mesh = initial_aligned
-                    area_rows.append({
-                        "subject": key,
-                        "area_percent_mahal_gt_5": initial_area,
-                    })
-                    for face_idx, mahal_val in enumerate(mahal):
-                        mahal_rows.append({
-                            "subject": key,
-                            "face_index": face_idx,
-                            "mahalanobis": float(mahal_val),
-                        })
+            percent_over = _percent_over_threshold(mahal, area_threshold)
+            subject_info[key] = {
+                "source": "computed",
+                "area_percent": area_percent,
+                "percent_over": percent_over,
+                "mahal": mahal,
+                "aligned_mesh": aligned_key_mesh,
+            }
+            print(
+                f"[INFO] Outlier check {key}: area_percent={area_percent:.2f}, "
+                f"percent_over={percent_over:.2f} (computed)"
+            )
             write_cache = True
 
-        # Produce rotating GIF of Mahalanobis distances
-        if mahal is not None and (force_gif or is_outlier or not gif_path.exists()):
-            if aligned_key_mesh is None:
-                aligned_key_mesh = read_mesh_from_file(mesh_path)
+    outliers = [k for k, info in subject_info.items()
+                if should_recompute(info["area_percent"], info["percent_over"])]
+    for subject in outliers:
+        gif_path = res_dir_new / f"{subject}_to_{ref_distribution}_mahalanobis.gif"
+        try:
+            gif_path.unlink()
+        except FileNotFoundError:
+            pass
+    force_gif_subjects = set()
+    if outliers:
+        for margin in range(35, -1, -5):
+            print(f"[INFO] Recomputing outliers with y_start_margin={margin}: {outliers}")
+            if not _force_recompute_subjects(outliers, query_cohort_dir, reference_mouse, margin):
+                break
+            still_outliers = []
+            for subject in list(outliers):
+                mahal, aligned_key_mesh, area_percent = _compute_mahalanobis_for_subject(
+                    subject, query_cohort_meshes[subject], ref_cohort_meshes, area_threshold,
+                    use_cache=False
+                )
+                percent_over = _percent_over_threshold(mahal, area_threshold)
+                print(
+                    f"[INFO] Recompute check {subject}: area_percent={area_percent:.2f}, "
+                    f"percent_over={percent_over:.2f}"
+                )
+                subject_info[subject] = {
+                    "source": f"recomputed_{margin}",
+                    "area_percent": area_percent,
+                    "percent_over": percent_over,
+                    "mahal": mahal,
+                    "aligned_mesh": aligned_key_mesh,
+                }
+                force_gif_subjects.add(subject)
+                if should_recompute(area_percent, percent_over):
+                    still_outliers.append(subject)
+            outliers = still_outliers
+            write_cache = True
+            if not outliers:
+                break
+            if margin == 0:
+                print(f"[WARN] Outliers persist at y_start_margin=0: {outliers}")
+
+    for key, info in subject_info.items():
+        area_rows.append({
+            "subject": key,
+            "area_percent_mahal_gt_5": info["area_percent"],
+        })
+        for face_idx, mahal_val in enumerate(info["mahal"]):
+            mahal_rows.append({
+                "subject": key,
+                "face_index": face_idx,
+                "mahalanobis": float(mahal_val),
+            })
+
+    for key, mesh_path in query_cohort_meshes.items():
+        info = subject_info.get(key)
+        if info is None:
+            continue
+        mahal = info["mahal"]
+        if mahal is None or len(mahal) == 0:
+            continue
+        gif_path = res_dir_new / f"{key}_to_{ref_distribution}_mahalanobis.gif"
+        if info["aligned_mesh"] is not None:
+            aligned_key_mesh = info["aligned_mesh"]
+        else:
+            aligned_key_mesh = read_mesh_from_file(mesh_path)
+        recomputed = info.get("source") != "cached"
+        if key in force_gif_subjects or recomputed or not gif_path.exists():
             produce_gif_scalar_map(aligned_key_mesh, mahal, str(gif_path),
                                    cmap_name='magma',
                                    clip_percentile=None if fixate_plotting_max is not None else 95.0,
                                    max_value=fixate_plotting_max,
                                    colorbar_label='Mahalanobis distance')
             print(f"Saved Mahalanobis distance GIF for {key} at {gif_path}")
-        elif gif_path.exists():
-            print(f"Skipping GIF for {key}, already exists at {gif_path}")
+        else:
+            print(f"Skipping GIF for {key} (cached), already exists at {gif_path}")
 
     if write_cache:
         if area_rows:
@@ -1242,6 +1215,7 @@ def one_cohort_statistics(cohort: str, reference_mouse: str, result_dir: str,upp
 
 
 def main():
+    print(f"[INFO] mouse_skull_pipelines version={_get_app_version()}")
     parser = argparse.ArgumentParser(description="Run the full body and skull pipeline.")
     sbp = parser.add_subparsers(dest="cmd", required=True)
 
