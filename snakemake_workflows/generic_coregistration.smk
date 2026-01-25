@@ -226,9 +226,12 @@ rule linear_coregistration:
         full_head_matrix = affine_matrix @ aff_mat
 
         np.savetxt(str(params.out_affine),full_head_matrix)
+        # Convert LPS (SimpleITK) -> RAS (Slicer) so the .h5 applies correctly in Slicer.
+        lps_to_ras = np.diag([-1.0, -1.0, 1.0, 1.0])
+        ras_matrix = lps_to_ras @ full_head_matrix @ lps_to_ras
         affine_tx = sitk.AffineTransform(3)
-        affine_tx.SetMatrix(full_head_matrix[:3, :3].reshape(-1).tolist())
-        affine_tx.SetTranslation(full_head_matrix[:3, 3].tolist())
+        affine_tx.SetMatrix(ras_matrix[:3, :3].reshape(-1).tolist())
+        affine_tx.SetTranslation(ras_matrix[:3, 3].tolist())
         sitk.WriteTransform(affine_tx, str(process_folder / "affine_head.h5"))
         #print("difference after affine transform",fix_pts_np - transform_points(mov_pts_np,full_head_matrix))
         #
