@@ -70,10 +70,11 @@ rule extract_head_nifti:
         x0, y0, x1, y1 = map(int, bbox)
         # add some margin
         y_start_margin = int(config.get("y_start_margin", 40))
-        x_start = max(0, x0 - 40)
-        x_end = min(data.shape[0], x1 + 40)
+        print(f"[INFO] extract_head_nifti y_start_margin={y_start_margin} subject={wildcards.subject}")
+        x_start = max(0, x0 - y_start_margin)
+        x_end = min(data.shape[0], x1 + y_start_margin)
         y_start = max(0, y0 - y_start_margin)
-        y_end = min(data.shape[2], y1 + 40)
+        y_end = min(data.shape[2], y1 + y_start_margin)
         head = data[x_start:x_end, :, y_start:y_end].astype(np.uint8)
 
         head_img = nib.Nifti1Image(head, affine)
