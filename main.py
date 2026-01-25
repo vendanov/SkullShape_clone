@@ -33,7 +33,8 @@ def clean_after_registration(cohort_folder: Path):
     """
 
     files_to_leave = ["head_affine_registered.obj", "4_inv_mesh.flag","ct_image.nii.gz",
-                      "nl_transformation_params.txt" , "affine_head.txt"
+                      "nl_transformation_params.txt" , "affine_head.txt", "coregistered_head.nii.gz",
+                      "affine_head.h5"
                       ]
 
     # itearate over the files in the cohort folder and subfolders
@@ -756,7 +757,7 @@ def visualize_subject_interactive(subject_path: Path,
 
 
 def should_recompute(area_percent: float, percent_points_over: float) -> bool:
-    return area_percent >= 80.0 and percent_points_over >= 80.0
+    return area_percent >= 40.0 and percent_points_over >= 40.0
 
 
 def _find_cohort_root_for_extraction(cohort_dir: Path) -> Optional[Path]:
@@ -889,66 +890,43 @@ def _percent_over_threshold(mahal: np.ndarray, threshold: float) -> float:
     return 100.0 * float(np.sum(mahal > threshold)) / float(len(mahal))
 
 
-def compare_cohorts_per_subject(cohort_1: str,
-                                cohort_2: str,
-                                reference_mouse: str,
-                                result_dir: str,
-                                ref_distribution: str = "cohort_2",
-                                fixate_plotting_max: Optional[float] = None):
-    """
-    Per-subject comparison: for each mouse in one cohort, compute how far it is
-    from the distribution of the other cohort.
+def _collect_registered_meshes(cohort_dir: Path) -> Dict[str, Path]:
+    # Map subject folder names to registered mesh paths.
+    return {
+        x.name: x / "head_affine_registered.obj"
+        for x in Path(cohort_dir).iterdir()
+        if (x / "head_affine_registered.obj").exists()
+    }
 
-    Creates rotating GIFs visualizing the Mahalanobis distance (per face) of
-    each subject in the query cohort to the reference cohort's distribution.
-    Returns a list of created GIF paths.
-    """
-    cohort_1 = Path(cohort_1)
-    cohort_2 = Path(cohort_2)
-    reference_mouse = Path(reference_mouse)
-    result_dir = Path(result_dir)
-    # Ensure output directory exists for saving GIFs
-    result_dir.mkdir(parents=True, exist_ok=True)
-    print(f"Per-subject comparison: {cohort_1} vs distribution of {cohort_2} (ref={ref_distribution})")
 
-    # Preprocessing: registration (same as other commands)
-    registration_to_reference(cohort_1, reference_mouse)
-    registration_to_reference(cohort_2, reference_mouse)
-
-    # Collect meshes
-    cohort_1_meshes = {x.name: x / "head_affine_registered.obj" for x in Path(cohort_1).iterdir()
-                       if (x / "head_affine_registered.obj").exists()}
-    cohort_2_meshes = {x.name: x / "head_affine_registered.obj" for x in Path(cohort_2).iterdir()
-                       if (x / "head_affine_registered.obj").exists()}
-
-    print(f"Found meshes -> cohort_1: {len(cohort_1_meshes)}, cohort_2: {len(cohort_2_meshes)}")
-
-    # select reference cohort for distribution here
+def _select_reference_distribution(cohort_1: Path,
+                                   cohort_2: Path,
+                                   result_dir: Path,
+                                   ref_distribution: str,
+                                   cohort_1_meshes: Dict[str, Path],
+                                   cohort_2_meshes: Dict[str, Path]):
+    # Choose which cohort defines the reference distribution.
     if ref_distribution == "cohort_1":
         ref_cohort_meshes = cohort_1_meshes
         query_cohort_meshes = cohort_2_meshes
-
         res_dir_new = result_dir / cohort_2.name
         query_cohort_dir = cohort_2
-        
     else:
         ref_cohort_meshes = cohort_2_meshes
         query_cohort_meshes = cohort_1_meshes
         res_dir_new = result_dir / cohort_1.name
         query_cohort_dir = cohort_1
-    res_dir_new.mkdir(parents=True, exist_ok=True)
+    return ref_cohort_meshes, query_cohort_meshes, res_dir_new, query_cohort_dir
 
-    # now per each mouse in query, compute GPA with reference cohort
 
-    area_threshold = 5.0
-    area_rows = []
-    mahal_rows = []
-    area_csv = res_dir_new / "mahalanobis_area_gt_5.csv"
-    mahal_csv = res_dir_new / "mahalanobis_per_face.csv"
-    cached_area = {}
-    cached_mahal = {}
+def _load_mahalanobis_cache(area_csv: Path,
+                            mahal_csv: Path) -> Tuple[Dict[str, float],
+                                                     Dict[str, Dict[int, float]],
+                                                     bool]:
+    # Load cached per-subject metrics when available.
+    cached_area: Dict[str, float] = {}
+    cached_mahal: Dict[str, Dict[int, float]] = {}
     write_cache = False
-    subject_info = {}
     if area_csv.exists() and mahal_csv.exists():
         with open(area_csv, "r", encoding="utf-8", newline="") as fh:
             reader = csv.DictReader(fh)
@@ -965,7 +943,17 @@ def compare_cohorts_per_subject(cohort_1: str,
                 cached_mahal.setdefault(subject, {})[face_idx] = val
     else:
         write_cache = True
+    return cached_area, cached_mahal, write_cache
 
+
+def _compute_subject_info(query_cohort_meshes: Dict[str, Path],
+                          ref_cohort_meshes: Dict[str, Path],
+                          cached_area: Dict[str, float],
+                          cached_mahal: Dict[str, Dict[int, float]],
+                          area_threshold: float) -> Tuple[Dict[str, Dict], bool]:
+    # Build per-subject stats, using cache when possible.
+    subject_info: Dict[str, Dict] = {}
+    write_cache = False
     for key, mesh_path in query_cohort_meshes.items():
         cached_area_val = cached_area.get(key)
         cached_mahal_vals = cached_mahal.get(key)
@@ -1004,18 +992,33 @@ def compare_cohorts_per_subject(cohort_1: str,
                 f"percent_over={percent_over:.2f} (computed)"
             )
             write_cache = True
+    return subject_info, write_cache
 
-    outliers = [k for k, info in subject_info.items()
-                if should_recompute(info["area_percent"], info["percent_over"])]
+
+def _remove_outlier_gifs(outliers: List[str],
+                         res_dir_new: Path,
+                         ref_distribution: str) -> None:
+    # Remove cached GIFs for outliers to force regeneration.
     for subject in outliers:
         gif_path = res_dir_new / f"{subject}_to_{ref_distribution}_mahalanobis.gif"
         try:
             gif_path.unlink()
         except FileNotFoundError:
             pass
+
+
+def _recompute_outliers(outliers: List[str],
+                        query_cohort_meshes: Dict[str, Path],
+                        ref_cohort_meshes: Dict[str, Path],
+                        query_cohort_dir: Path,
+                        reference_mouse: Path,
+                        area_threshold: float,
+                        subject_info: Dict[str, Dict]) -> Tuple[set, bool]:
+    # Retry extraction with tighter margins for persistent outliers.
     force_gif_subjects = set()
+    write_cache = False
     if outliers:
-        for margin in range(35, -1, -5):
+        for margin in range(30, -1, -10):
             print(f"[INFO] Recomputing outliers with y_start_margin={margin}: {outliers}")
             if not _force_recompute_subjects(outliers, query_cohort_dir, reference_mouse, margin):
                 break
@@ -1046,7 +1049,13 @@ def compare_cohorts_per_subject(cohort_1: str,
                 break
             if margin == 0:
                 print(f"[WARN] Outliers persist at y_start_margin=0: {outliers}")
+    return force_gif_subjects, write_cache
 
+
+def _append_mahalanobis_rows(subject_info: Dict[str, Dict],
+                             area_rows: List[Dict],
+                             mahal_rows: List[Dict]) -> None:
+    # Expand per-subject info into CSV rows.
     for key, info in subject_info.items():
         area_rows.append({
             "subject": key,
@@ -1059,6 +1068,14 @@ def compare_cohorts_per_subject(cohort_1: str,
                 "mahalanobis": float(mahal_val),
             })
 
+
+def _emit_subject_gifs(subject_info: Dict[str, Dict],
+                       query_cohort_meshes: Dict[str, Path],
+                       res_dir_new: Path,
+                       ref_distribution: str,
+                       fixate_plotting_max: Optional[float],
+                       force_gif_subjects: set) -> None:
+    # Generate per-subject GIFs with cache awareness.
     for key, mesh_path in query_cohort_meshes.items():
         info = subject_info.get(key)
         if info is None:
@@ -1082,38 +1099,119 @@ def compare_cohorts_per_subject(cohort_1: str,
         else:
             print(f"Skipping GIF for {key} (cached), already exists at {gif_path}")
 
-    if write_cache:
-        if area_rows:
-            area_latest = {}
-            for row in area_rows:
-                area_latest[row["subject"]] = row["area_percent_mahal_gt_5"]
-            area_rows = [
-                {"subject": subject, "area_percent_mahal_gt_5": area_val}
-                for subject, area_val in area_latest.items()
-            ]
-        if mahal_rows:
-            mahal_latest = {}
-            for row in mahal_rows:
-                key = (row["subject"], row["face_index"])
-                mahal_latest[key] = row["mahalanobis"]
-            mahal_rows = [
-                {"subject": subject, "face_index": face_idx, "mahalanobis": val}
-                for (subject, face_idx), val in mahal_latest.items()
-            ]
 
-    if area_rows and write_cache:
+def _write_mahalanobis_cache(area_rows: List[Dict],
+                             mahal_rows: List[Dict],
+                             area_csv: Path,
+                             mahal_csv: Path) -> None:
+    # Collapse duplicate rows and write cache CSVs.
+    if area_rows:
+        area_latest = {}
+        for row in area_rows:
+            area_latest[row["subject"]] = row["area_percent_mahal_gt_5"]
+        area_rows[:] = [
+            {"subject": subject, "area_percent_mahal_gt_5": area_val}
+            for subject, area_val in area_latest.items()
+        ]
+    if mahal_rows:
+        mahal_latest = {}
+        for row in mahal_rows:
+            key = (row["subject"], row["face_index"])
+            mahal_latest[key] = row["mahalanobis"]
+        mahal_rows[:] = [
+            {"subject": subject, "face_index": face_idx, "mahalanobis": val}
+            for (subject, face_idx), val in mahal_latest.items()
+        ]
+    if area_rows:
         with open(area_csv, "w", encoding="utf-8", newline="") as fh:
             writer = csv.DictWriter(fh, fieldnames=["subject", "area_percent_mahal_gt_5"])
             writer.writeheader()
             writer.writerows(area_rows)
         print(f"Saved Mahalanobis area summary at {area_csv}")
-
-    if mahal_rows and write_cache:
+    if mahal_rows:
         with open(mahal_csv, "w", encoding="utf-8", newline="") as fh:
             writer = csv.DictWriter(fh, fieldnames=["subject", "face_index", "mahalanobis"])
             writer.writeheader()
             writer.writerows(mahal_rows)
         print(f"Saved Mahalanobis per-face values at {mahal_csv}")
+
+
+def compare_cohorts_per_subject(cohort_1: str,
+                                cohort_2: str,
+                                reference_mouse: str,
+                                result_dir: str,
+                                ref_distribution: str = "cohort_2",
+                                fixate_plotting_max: Optional[float] = None):
+    """
+    Per-subject comparison: for each mouse in one cohort, compute how far it is
+    from the distribution of the other cohort.
+
+    Creates rotating GIFs visualizing the Mahalanobis distance (per face) of
+    each subject in the query cohort to the reference cohort's distribution.
+    Returns a list of created GIF paths.
+    """
+    cohort_1 = Path(cohort_1)
+    cohort_2 = Path(cohort_2)
+    reference_mouse = Path(reference_mouse)
+    result_dir = Path(result_dir)
+    # Ensure output directory exists for saving GIFs
+    result_dir.mkdir(parents=True, exist_ok=True)
+    print(f"Per-subject comparison: {cohort_1} vs distribution of {cohort_2} (ref={ref_distribution})")
+
+    # Preprocessing: registration (same as other commands)
+    registration_to_reference(cohort_1, reference_mouse)
+    registration_to_reference(cohort_2, reference_mouse)
+
+    # Load meshes and pick which cohort serves as the reference distribution.
+    cohort_1_meshes = _collect_registered_meshes(cohort_1)
+    cohort_2_meshes = _collect_registered_meshes(cohort_2)
+    print(f"Found meshes -> cohort_1: {len(cohort_1_meshes)}, cohort_2: {len(cohort_2_meshes)}")
+    ref_cohort_meshes, query_cohort_meshes, res_dir_new, query_cohort_dir = (
+        _select_reference_distribution(
+            cohort_1, cohort_2, result_dir, ref_distribution, cohort_1_meshes, cohort_2_meshes
+        )
+    )
+    res_dir_new.mkdir(parents=True, exist_ok=True)
+
+    # Compute per-subject Mahalanobis against the reference distribution.
+
+    area_threshold = 5.0
+    area_rows = []
+    mahal_rows = []
+    area_csv = res_dir_new / "mahalanobis_area_gt_5.csv"
+    mahal_csv = res_dir_new / "mahalanobis_per_face.csv"
+    cached_area, cached_mahal, write_cache = _load_mahalanobis_cache(area_csv, mahal_csv)
+    subject_info, computed_cache = _compute_subject_info(
+        query_cohort_meshes, ref_cohort_meshes, cached_area, cached_mahal, area_threshold
+    )
+    write_cache = write_cache or computed_cache
+
+    # Recompute outliers and flag them for GIF regeneration.
+    outliers = [k for k, info in subject_info.items()
+                if should_recompute(info["area_percent"], info["percent_over"])]
+    _remove_outlier_gifs(outliers, res_dir_new, ref_distribution)
+    force_gif_subjects, recomputed_cache = _recompute_outliers(
+        outliers,
+        query_cohort_meshes,
+        ref_cohort_meshes,
+        query_cohort_dir,
+        reference_mouse,
+        area_threshold,
+        subject_info,
+    )
+    write_cache = write_cache or recomputed_cache
+
+    _append_mahalanobis_rows(subject_info, area_rows, mahal_rows)
+    _emit_subject_gifs(
+        subject_info,
+        query_cohort_meshes,
+        res_dir_new,
+        ref_distribution,
+        fixate_plotting_max,
+        force_gif_subjects,
+    )
+    if write_cache:
+        _write_mahalanobis_cache(area_rows, mahal_rows, area_csv, mahal_csv)
 
 
 def compare_cohorts(cohort_1: str, cohort_2: str, reference_mouse: str, result_dir: str):
