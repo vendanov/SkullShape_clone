@@ -11,15 +11,16 @@
 
 set -euo pipefail
 
-# Paths (edit as needed)
+# Paths (edit as needed or override via args)
+# Usage: sbatch compare_cohorts.slurm <cohort_path> <output_path>
 REPO="/home/varhai/mouse_skull_pipelines"
 REPO_FULL_BODY="/home/varhai/mouse_full_body"
 REF_DIR="/home/varhai/PRIMUS/data/83_BIOINFORMATICS/Igor/reference_image"
 COHORT_1="/mnt/magnus/ccp/Igor/male_female_new_alg"
-COHORT_2="/home/varhai/PRIMUS/data/83_IMPC_DATA/Bioimaging/SCREENad.Morpho&BodyComp/2024/Screen20241111c364_Col2a1 & Sp7 & wt"
+COHORT_2="${1:-/home/varhai/PRIMUS/data/83_IMPC_DATA/Bioimaging/SCREENad.Morpho&BodyComp/2024/Screen20241111c364_Col2a1 & Sp7 & wt}"
+RESULT_DIR="${2:-/home/varhai/results_tmp/c364}"
 
-RESULT_DIR="/home/varhai/results_tmp/c364"
-
+mkdir -p "$RESULT_DIR"
 
 
 # Ensure log directory exists relative to submission dir
