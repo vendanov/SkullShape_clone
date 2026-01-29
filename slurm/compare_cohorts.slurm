@@ -18,7 +18,7 @@ REPO_FULL_BODY="/home/varhai/mouse_full_body"
 REF_DIR="/home/varhai/PRIMUS/data/83_BIOINFORMATICS/Igor/reference_image"
 COHORT_1="/mnt/magnus/ccp/Igor/male_female_new_alg"
 COHORT_2="${1:-/home/varhai/PRIMUS/data/83_IMPC_DATA/Bioimaging/SCREENad.Morpho&BodyComp/2024/Screen20241111c364_Col2a1 & Sp7 & wt}"
-RESULT_DIR="${2:-/home/varhai/results_tmp/c364}"
+RESULT_DIR="${2:-$COHORT_2/_mahalanobis_results}"
 
 mkdir -p "$RESULT_DIR"
 
