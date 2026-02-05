@@ -1,6 +1,7 @@
 import xml.etree.ElementTree as ET
 from pathlib import Path
 import numpy as np
+import time
 import nibabel as nib
 
 # Config
@@ -53,6 +54,8 @@ rule extract_head_nifti:
     output:
         out=str(RESULT_ROOT / "{subject}" / "ct_image.nii.gz")
     run:
+        start_ts = time.time()
+        print(f"[INFO] extract_head_nifti start subject={wildcards.subject}")
         out_dir = Path(output.out).parent
         out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -79,3 +82,4 @@ rule extract_head_nifti:
 
         head_img = nib.Nifti1Image(head, affine)
         nib.save(head_img, str(output.out))
+        print(f"[INFO] extract_head_nifti done subject={wildcards.subject} elapsed={time.time() - start_ts:.1f}s")

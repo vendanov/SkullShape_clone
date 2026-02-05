@@ -4,6 +4,7 @@ from pathlib import Path
 import subprocess
 
 import numpy as np
+import time
 import SimpleITK as sitk
 
 from mouse_skull_pipelines.scripts.image_algorithms import register_linear_full, non_rigid_registration, \
@@ -65,6 +66,8 @@ rule otsu_threshold:
     threads: 1
 
     run:
+        start_ts = time.time()
+        print(f"[INFO] otsu_threshold start subject={wildcards.subject}")
         inp_file = Path(output.flag).parent / ct_im_name
         out_file = Path(output.flag).parent / "bone_coregistration_mask.nii.gz"
         out_file.unlink(missing_ok=True)
@@ -74,6 +77,7 @@ rule otsu_threshold:
         otsu_treshold(inp_file,out_file)
 
         Path(output.flag).touch(exist_ok=True)
+        print(f"[INFO] otsu_threshold done subject={wildcards.subject} elapsed={time.time() - start_ts:.1f}s")
 
 
 
@@ -178,6 +182,8 @@ rule linear_coregistration:
 
     threads: 1
     run:
+        start_ts = time.time()
+        print(f"[INFO] linear_coregistration start subject={wildcards.subject}")
         process_folder = Path(output[0]).parent
         Path(str(params.out_head)).unlink(missing_ok=True)
         Path(str(params.out_mat)).unlink(missing_ok=True)
@@ -241,6 +247,7 @@ rule linear_coregistration:
 
         #raise ValueError("STOP")
         Path(output[0]).touch(exist_ok=True)
+        print(f"[INFO] linear_coregistration done subject={wildcards.subject} elapsed={time.time() - start_ts:.1f}s")
 
 
 
@@ -254,6 +261,8 @@ rule non_rigid_registration_rule:
         deformation=lambda wildcards: PROCESS_DIR / f"{wildcards.subject}/deformationField.h5"
     threads: 2
     run:
+        start_ts = time.time()
+        print(f"[INFO] non_rigid_registration start subject={wildcards.subject}")
         warped_path = Path(str(params.warped))
         deformation_path = Path(str(params.deformation))
         warped_path.unlink(missing_ok=True)
@@ -297,6 +306,7 @@ rule non_rigid_registration_rule:
                 Path(transform_path).unlink(missing_ok=True)
 
         Path(str(output[0])).touch(exist_ok=True)
+        print(f"[INFO] non_rigid_registration done subject={wildcards.subject} elapsed={time.time() - start_ts:.1f}s")
 
 
 
@@ -312,6 +322,8 @@ rule elastix_refinement_rule:
         deformation_field=lambda wildcards: PROCESS_DIR / f"{wildcards.subject}/elastix_deformation_field.h5"
     threads: 2
     run:
+        start_ts = time.time()
+        print(f"[INFO] elastix_refinement start subject={wildcards.subject}")
         refined_image_path = Path(str(params.refined_image))
         refined_image_path.unlink(missing_ok=True)
         transform_path = Path(str(params.transform_params))
@@ -323,6 +335,11 @@ rule elastix_refinement_rule:
         deformation_field_path.unlink(missing_ok=True)
  
         elastix = sitk.ElastixImageFilter()
+        try:
+            elastix.SetNumberOfThreads(12)
+            print(f"[INFO] elastix_refinement threads={threads}")
+        except Exception as exc:
+            print(f"[WARN] Failed to set elastix threads: {exc}")
         elastix.SetLogToConsole(False)
         elastix.SetLogToFile(False)
         sitk_fixed = sitk.ReadImage(str(params.fixed))
@@ -395,6 +412,7 @@ rule elastix_refinement_rule:
                 os.fsync(dir_fd)
             finally:
                 os.close(dir_fd)
+        print(f"[INFO] elastix_refinement done subject={wildcards.subject} elapsed={time.time() - start_ts:.1f}s")
 
 
 
@@ -410,6 +428,8 @@ rule inverse_transform_mesh_rule:
 
     threads: 3
     run:
+        start_ts = time.time()
+        print(f"[INFO] inverse_transform_mesh start subject={wildcards.subject}")
         Path(str(params.out_head)).unlink(missing_ok=True)
         subject_dir = Path(input[0]).parent
 
@@ -439,3 +459,4 @@ rule inverse_transform_mesh_rule:
         deformation_field.unlink(missing_ok=True)
         elastix_field.unlink(missing_ok=True)
         Path(output[0]).touch(exist_ok=True)
+        print(f"[INFO] inverse_transform_mesh done subject={wildcards.subject} elapsed={time.time() - start_ts:.1f}s")

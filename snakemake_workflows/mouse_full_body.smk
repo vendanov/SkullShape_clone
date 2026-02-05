@@ -2,6 +2,7 @@ from configparser import ConfigParser
 from pathlib import Path
 from typing import Dict
 import numpy as np
+import time
 import SimpleITK as sitk
 import torch
 from PIL import Image
@@ -332,6 +333,8 @@ rule make_nifti_image:
     output:
         FLAG = (OUT_FOLD/"{subject}/make_nifti_image.flag")
     run:
+        start_ts = time.time()
+        print(f"[INFO] make_nifti_image start subject={wildcards.subject}")
 
         Path(output.FLAG).parent.mkdir(exist_ok=True)
         Path(output.FLAG).touch(exist_ok=True)
@@ -342,6 +345,7 @@ rule make_nifti_image:
             img = flip_sitk_image(img,(True,False,True))
 
         sitk.WriteImage(img,Path(output.FLAG).parent / "full_body_image_raw.nii.gz")  # real output
+        print(f"[INFO] make_nifti_image done subject={wildcards.subject} elapsed={time.time() - start_ts:.1f}s")
 
 
 
@@ -354,6 +358,8 @@ rule detect_head_and_paws:
     params:
         result_xml = lambda wildcards: OUT_FOLD / f"{wildcards.subject}/full_body_top_classes.xml"
     run:
+        start_ts = time.time()
+        print(f"[INFO] detect_head_and_paws start subject={wildcards.subject}")
         #run the script
         fold_ = Path(input[0]).parent
         full_body_image = sitk.ReadImage(fold_/"full_body_image_raw.nii.gz")
@@ -387,7 +393,5 @@ rule detect_head_and_paws:
 
 
         Path(output.FLAG).touch(exist_ok=True)
-
-
-
+        print(f"[INFO] detect_head_and_paws done subject={wildcards.subject} elapsed={time.time() - start_ts:.1f}s")
 

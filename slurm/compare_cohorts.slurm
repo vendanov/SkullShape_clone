@@ -3,7 +3,6 @@
 #SBATCH --cpus-per-task=24
 #SBATCH --mem=725000M
 #SBATCH --time=240:00:00
-#SBATCH --nice=1000
 #SBATCH --output=logs/%x_%j.out
 #SBATCH --error=logs/%x_%j.err
 #SBATCH --mail-type=BEGIN,END,FAIL
@@ -77,4 +76,3 @@ python "$REPO/main.py" compare_cohorts \
   --method per_subject \
   --ref_distribution cohort_1\
   --fixate_plotting_max 5.0
-

@@ -5,6 +5,7 @@ import os
 import shutil
 import subprocess
 import sys
+import time
 from typing import Dict, List, Optional, Tuple
 from collections import OrderedDict
 import scipy.io as scio
@@ -27,6 +28,14 @@ APP_VERSION = "mouse_skull_pipelines"
 def _get_app_version() -> str:
     return APP_VERSION
 
+
+def _log_duration(start_ts: float, label: str, subject: Optional[str] = None) -> None:
+    elapsed = time.time() - start_ts
+    if subject:
+        print(f"[INFO] {label} done subject={subject} elapsed={elapsed:.1f}s")
+    else:
+        print(f"[INFO] {label} done elapsed={elapsed:.1f}s")
+
 def clean_after_registration(cohort_folder: Path):
     """
     Clean the cohort folder after registration.
@@ -44,7 +53,10 @@ def clean_after_registration(cohort_folder: Path):
             if file not in files_to_leave:
                 file_path = os.path.join(root, file)
                 print(f"Removing {file_path}")
-                os.remove(file_path)
+                try:
+                    os.remove(file_path)
+                except FileNotFoundError:
+                    pass
 
 
 def resolve_curent_parent_dir():
@@ -128,8 +140,14 @@ def run_snakemake_workflow(snakefile: Path, config: Dict, cores: int, keep_going
     ]
     if keep_going:
         cmd.append('--keep-going')
+    print(f"[INFO] Running snakemake: {snakefile} cores={cores} keep_going={keep_going}")
+    print(f"[INFO] Snakemake config: {temp_path}")
+    print(f"[INFO] Snakemake cmd: {' '.join(cmd)}")
+    start_ts = time.time()
     try:
         subprocess.run(cmd, check=True)
+        elapsed = time.time() - start_ts
+        print(f"[INFO] Snakemake finished in {elapsed:.1f}s: {snakefile}")
     finally:
         try:
             os.remove(temp_path)
@@ -789,7 +807,7 @@ def _force_recompute_subjects(subjects: List[str],
         "subjects": subjects,
         "y_start_margin": int(y_start_margin),
     }
-    run_snakemake_workflow(extract_smk, extract_cfg, cores=1, keep_going=True)
+    run_snakemake_workflow(extract_smk, extract_cfg, cores=9, keep_going=True)
 
     if base_skull_dir in cohort_dir.parents and cohort_dir != base_skull_dir:
         for subject in subjects:
@@ -819,7 +837,7 @@ def _force_recompute_subjects(subjects: List[str],
     config["cohort_dir"] = str(cohort_dir)
     config["subjects"] = subjects
     reg_smk = Path(__file__).resolve().parent / "snakemake_workflows" / "generic_coregistration.smk"
-    run_snakemake_workflow(reg_smk, config, cores=1, keep_going=True)
+    run_snakemake_workflow(reg_smk, config, cores=9, keep_going=True)
     clean_after_registration(cohort_dir)
     return True
 
@@ -1018,7 +1036,7 @@ def _recompute_outliers(outliers: List[str],
     force_gif_subjects = set()
     write_cache = False
     if outliers:
-        for margin in range(30, -1, -10):
+        for margin in (30, 20, 10, 0):
             print(f"[INFO] Recomputing outliers with y_start_margin={margin}: {outliers}")
             if not _force_recompute_subjects(outliers, query_cohort_dir, reference_mouse, margin):
                 break
