@@ -4,11 +4,14 @@ matplotlib
 scikit-learn
 snakemake
 scipy
+sympy
 torch
 torchvision
 nibabel
 vtk
 SimpleITK
+PyYAML
+antspyx
 Pillow
 opencv-python
 tqdm

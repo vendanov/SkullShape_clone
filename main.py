@@ -184,7 +184,6 @@ def prepare_full_body_and_extract_heads(
         'slicer_core',
         'ref_im',
         'ref_mask',
-        'ref_landmarks',
         'body_part_detection_top_model',
     }
     missing = [key for key in required_keys if key not in config]

@@ -26,7 +26,8 @@ SLICER_CORE = config['slicer_core']
 # Reference image paths
 ref_im = REF_IMAGE / config['ref_im']
 ref_mask = REF_IMAGE / config['ref_mask']
-ref_landmarks = REF_IMAGE / config['ref_landmarks']
+ref_landmarks_cfg = config.get('ref_landmarks')
+ref_landmarks = REF_IMAGE / ref_landmarks_cfg if ref_landmarks_cfg else None
 # Additional file paths
 
 
