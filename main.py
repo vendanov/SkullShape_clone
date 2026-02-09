@@ -777,6 +777,21 @@ def should_recompute(area_percent: float, percent_points_over: float) -> bool:
     return area_percent >= 40.0 and percent_points_over >= 40.0
 
 
+def _rmtree_with_retries(path: Path, retries: int = 6, base_delay_s: float = 0.2) -> None:
+    # Some network/filesystem backends can transiently report "Directory not empty"
+    # during recursive deletes; retry with short backoff before giving up.
+    for attempt in range(retries):
+        try:
+            shutil.rmtree(path)
+            return
+        except FileNotFoundError:
+            return
+        except OSError:
+            if attempt == retries - 1:
+                raise
+            time.sleep(base_delay_s * (attempt + 1))
+
+
 def _find_cohort_root_for_extraction(cohort_dir: Path) -> Optional[Path]:
     candidates = [cohort_dir, cohort_dir.parent, cohort_dir.parent.parent]
     for cand in candidates:
@@ -813,7 +828,7 @@ def _force_recompute_subjects(subjects: List[str],
             base_subject_dir = base_skull_dir / subject
             dst_dir = cohort_dir / subject
             if dst_dir.exists():
-                shutil.rmtree(dst_dir)
+                _rmtree_with_retries(dst_dir)
             shutil.copytree(base_subject_dir, dst_dir, copy_function=shutil.copy2, symlinks=True)
 
     for subject in subjects:
@@ -1153,6 +1168,79 @@ def _write_mahalanobis_cache(area_rows: List[Dict],
         print(f"Saved Mahalanobis per-face values at {mahal_csv}")
 
 
+def create_mahalanobis_heatmap_from_csv(
+    mahal_csv: Path,
+    reference_mesh: Path,
+    output_dir: Path,
+    subject: Optional[str] = None,
+    fixate_plotting_max: Optional[float] = None,
+) -> None:
+    mahal_csv = Path(mahal_csv).expanduser().resolve()
+    reference_mesh = Path(reference_mesh).expanduser().resolve()
+    output_dir = Path(output_dir).expanduser().resolve()
+
+    if not mahal_csv.exists():
+        raise FileNotFoundError(f"Mahalanobis CSV not found: {mahal_csv}")
+    if not reference_mesh.exists():
+        raise FileNotFoundError(f"Reference mesh not found: {reference_mesh}")
+
+    with open(mahal_csv, "r", encoding="utf-8", newline="") as fh:
+        reader = csv.DictReader(fh)
+        fieldnames = set(reader.fieldnames or [])
+        subject_col = "subject" if "subject" in fieldnames else (
+            "subj_id" if "subj_id" in fieldnames else None
+        )
+        face_col = "face_index" if "face_index" in fieldnames else (
+            "face_id" if "face_id" in fieldnames else None
+        )
+        if subject_col is None:
+            raise ValueError("CSV must contain either 'subject' or 'subj_id'.")
+        if face_col is None:
+            raise ValueError("CSV must contain either 'face_index' or 'face_id'.")
+        if "mahalanobis" not in fieldnames:
+            raise ValueError("CSV must contain 'mahalanobis'.")
+
+        per_subject = {}
+        for row in reader:
+            subj = str(row[subject_col]).strip()
+            if not subj:
+                continue
+            face_idx = int(row[face_col])
+            value = float(row["mahalanobis"])
+            per_subject.setdefault(subj, {})[face_idx] = value
+
+    if not per_subject:
+        raise ValueError(f"No rows found in {mahal_csv}")
+
+    if subject is not None and subject not in per_subject:
+        subjects = ", ".join(sorted(per_subject.keys()))
+        raise ValueError(
+            f"Subject '{subject}' not found in CSV. Available subjects: {subjects}"
+        )
+
+    mesh = read_mesh_from_file(reference_mesh)
+    _, faces = read_vtk_polydata_points_faces(mesh)
+    n_faces = int(faces.shape[0])
+
+    subjects_to_render = [subject] if subject is not None else sorted(per_subject.keys())
+    output_dir.mkdir(parents=True, exist_ok=True)
+    for subj in subjects_to_render:
+        values = np.zeros(n_faces, dtype=float)
+        for face_idx, val in per_subject[subj].items():
+            if 0 <= face_idx < n_faces:
+                values[face_idx] = val
+        output_gif = output_dir / f"{subj}_mahalanobis.gif"
+        produce_gif_scalar_map(
+            mesh,
+            values,
+            str(output_gif),
+            clip_percentile=None if fixate_plotting_max is not None else 95.0,
+            max_value=fixate_plotting_max,
+            colorbar_label="Mahalanobis distance",
+        )
+        print(f"Saved Mahalanobis heatmap GIF for {subj} at {output_gif}")
+
+
 def compare_cohorts_per_subject(cohort_1: str,
                                 cohort_2: str,
                                 reference_mouse: str,
@@ -1395,6 +1483,16 @@ def main():
     viz_parser.add_argument("subject", type=str, help="Path to a subject directory or head_affine_registered.obj file.")
     viz_parser.add_argument("reference_cohort", type=str, help="Path to the reference cohort directory.")
 
+    heatmap_parser = sbp.add_parser(
+        "mahalanobis_csv_heatmap",
+        help="Create a Mahalanobis heatmap GIF from per-face CSV and a reference mesh.",
+    )
+    heatmap_parser.add_argument("--mahal_csv", type=str, required=True, help="Path to CSV with subject/subj_id, face_index/face_id, mahalanobis.")
+    heatmap_parser.add_argument("--reference_mesh", type=str, required=True, help="Path to reference OBJ mesh.")
+    heatmap_parser.add_argument("--output_dir", type=str, required=True, help="Output directory for generated GIF(s).")
+    heatmap_parser.add_argument("--subject", type=str, default=None, help="Subject name to render. If omitted, render all subjects in CSV.")
+    heatmap_parser.add_argument("--fixate_plotting_max", type=float, default=None, help="Optional fixed max value for color scale.")
+
     self_aver_parser = sbp.add_parser("one_cohort_statistics", help="Run the cohort statistics explanation.")
 
     self_aver_parser.add_argument(
@@ -1463,6 +1561,15 @@ def main():
         if not result_dir.exists():
             os.makedirs(result_dir)
         one_cohort_statistics(args.cohort, args.reference_mouse, result_dir, upper_limit=args.upper_limit)
+
+    elif args.cmd == "mahalanobis_csv_heatmap":
+        create_mahalanobis_heatmap_from_csv(
+            mahal_csv=Path(args.mahal_csv),
+            reference_mesh=Path(args.reference_mesh),
+            output_dir=Path(args.output_dir),
+            subject=getattr(args, "subject", None),
+            fixate_plotting_max=getattr(args, "fixate_plotting_max", None),
+        )
 
     elif args.cmd == "generate_full_body":
         prepare_full_body_and_extract_heads(
