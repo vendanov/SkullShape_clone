@@ -1,60 +1,86 @@
-<mxfile host="app.diagrams.net" agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36" version="29.3.2">
+<mxfile host="app.diagrams.net" agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36" version="29.3.8">
   <diagram id="compare-cohorts-per-subject" name="Compare Cohorts Per Subject (Schematic)">
-    <mxGraphModel dx="1113" dy="702" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1169" pageHeight="827" math="0" shadow="0">
+    <mxGraphModel dx="2624" dy="918" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1169" pageHeight="827" math="0" shadow="0">
       <root>
         <mxCell id="0" />
         <mxCell id="1" parent="0" />
-        <mxCell id="2" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f4f4f4;strokeColor=#333333;" value="Inputs&#xa;compare_cohorts (per_subject)" vertex="1">
-          <mxGeometry height="70" width="220" x="40" y="40" as="geometry" />
+        <mxCell id="280JLmQpzJkzQEbCZ0IG-14" edge="1" parent="1" source="2" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" target="4">
+          <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="3" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#333333;" value="Registration Workflow&#xa;generic_coregistration.smk" vertex="1">
-          <mxGeometry height="80" width="240" x="300" y="30" as="geometry" />
+        <mxCell id="2" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f4f4f4;strokeColor=#333333;" value="A) Head image (KO)&lt;br&gt;B) Cohort for comparion (head images)&amp;nbsp;" vertex="1">
+          <mxGeometry height="80" width="230" x="40" y="20" as="geometry" />
         </mxCell>
-        <mxCell id="4" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#333333;" value="Mesh Generation Steps&lt;br&gt;1) Otsu mask&lt;br&gt;2) Linear coreg to reference mouse (ref)&lt;br&gt;3) Elastix refine to ref&lt;br&gt;4) Inverse transform mesh ( inverse elastix )&amp;nbsp;" vertex="1">
-          <mxGeometry height="140" width="320" x="580" as="geometry" />
+        <mxCell id="280JLmQpzJkzQEbCZ0IG-15" edge="1" parent="1" source="10" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" target="4">
+          <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="5" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#333333;" value="Registered Meshes&#xa;head_affine_registered.obj" vertex="1">
-          <mxGeometry height="80" width="210" x="930" y="30" as="geometry" />
+        <mxCell id="10" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f4f4f4;strokeColor=#333333;" value="Reference cohort&lt;br&gt;(head images)" vertex="1">
+          <mxGeometry height="80" width="230" x="40" y="110" as="geometry" />
         </mxCell>
-        <mxCell id="6" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#333333;" value="Select Reference Distribution&#xa;cohort_1 → reference" vertex="1">
-          <mxGeometry height="70" width="240" x="40" y="200" as="geometry" />
+        <mxCell id="280JLmQpzJkzQEbCZ0IG-16" edge="1" parent="1" source="11" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" target="4">
+          <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="7" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#333333;" value="Compute Mahalanobis&lt;br&gt;per subject vs reference cohort" vertex="1">
-          <mxGeometry height="80" width="260" x="325" y="195" as="geometry" />
+        <mxCell id="11" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f4f4f4;strokeColor=#333333;" value="One reference image&lt;br&gt;+ generated reference mesh (ref)" vertex="1">
+          <mxGeometry height="90" width="230" x="40" y="200" as="geometry" />
+        </mxCell>
+        <mxCell id="4" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#333333;" value="&lt;font style=&quot;font-size: 14px;&quot;&gt;Mesh Generation Steps&lt;br&gt;1) Linear coregistration to ref&lt;br&gt;2) Elastix refine to ref&lt;br&gt;3) Inverse nonrigid transformation of reference mesh&amp;nbsp;&lt;/font&gt;" vertex="1">
+          <mxGeometry height="140" width="320" x="480" y="80" as="geometry" />
+        </mxCell>
+        <mxCell id="280JLmQpzJkzQEbCZ0IG-13" edge="1" parent="1" source="5" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" target="280JLmQpzJkzQEbCZ0IG-17">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1110" y="150" />
+              <mxPoint x="1110" y="310" />
+              <mxPoint x="55" y="310" />
+              <mxPoint x="55" y="380" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="5" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#333333;" value="Outputs:&lt;div&gt;A) Mesh (KO) B) Meshes for cohort&lt;/div&gt;&lt;div&gt;2) Meshes reference cohort&lt;/div&gt;" vertex="1">
+          <mxGeometry height="80" width="210" x="850" y="110" as="geometry" />
+        </mxCell>
+        <mxCell id="7" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#333333;" value="Compute Mahalanobis&lt;div&gt;for each vertex on mesh (subject vs reference cohort meshes)&lt;/div&gt;" vertex="1">
+          <mxGeometry height="80" width="260" x="190" y="520" as="geometry" />
         </mxCell>
         <mxCell id="8" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#333333;" value="Generate per-subject GIFs" vertex="1">
-          <mxGeometry height="70" width="220" x="630" y="200" as="geometry" />
+          <mxGeometry height="70" width="220" x="505" y="340" as="geometry" />
         </mxCell>
-        <mxCell id="9" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#333333;" value="Outputs&#xa;Mahalanobis GIFs&#xa;Per-subject CSVs" vertex="1">
-          <mxGeometry height="90" width="240" x="900" y="190" as="geometry" />
-        </mxCell>
-        <mxCell id="e1" edge="1" parent="1" source="2" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" target="3">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-        <mxCell id="e2" edge="1" parent="1" source="3" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" target="4">
-          <mxGeometry relative="1" as="geometry" />
+        <mxCell id="9" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#333333;" value="Outputs:&lt;br&gt;Mahalanobis GIFs&lt;div&gt;&lt;br&gt;&lt;/div&gt;" vertex="1">
+          <mxGeometry height="110" width="260" x="825" y="320" as="geometry" />
         </mxCell>
         <mxCell id="e3" edge="1" parent="1" source="4" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" target="5">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="e5" edge="1" parent="1" source="6" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" target="7">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-        <mxCell id="e6" edge="1" parent="1" source="7" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" target="8">
-          <mxGeometry relative="1" as="geometry" />
+        <mxCell id="e6" edge="1" parent="1" source="7" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" target="280JLmQpzJkzQEbCZ0IG-24">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="740" y="440" as="targetPoint" />
+          </mxGeometry>
         </mxCell>
         <mxCell id="e7" edge="1" parent="1" source="8" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" target="9">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="OrRhSqHZidYOZBYZs3ZB-9" edge="1" parent="1" source="5" style="endArrow=classic;html=1;rounded=0;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" target="6" value="">
-          <mxGeometry height="50" relative="1" width="50" as="geometry">
-            <Array as="points">
-              <mxPoint x="1035" y="160" />
-              <mxPoint x="160" y="160" />
-            </Array>
-            <mxPoint x="990" y="430" as="sourcePoint" />
-            <mxPoint x="1040" y="380" as="targetPoint" />
-          </mxGeometry>
+        <mxCell id="280JLmQpzJkzQEbCZ0IG-19" edge="1" parent="1" source="280JLmQpzJkzQEbCZ0IG-17" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" target="280JLmQpzJkzQEbCZ0IG-20" value="">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="280JLmQpzJkzQEbCZ0IG-17" parent="1" style="whiteSpace=wrap;html=1;fillColor=#76608a;strokeColor=#432D57;rounded=1;fontColor=#ffffff;" value="Run General Procrustes alignment on all meshes" vertex="1">
+          <mxGeometry height="60" width="150" x="70" y="350" as="geometry" />
+        </mxCell>
+        <mxCell id="280JLmQpzJkzQEbCZ0IG-22" edge="1" parent="1" source="280JLmQpzJkzQEbCZ0IG-20" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" target="7" value="">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="280JLmQpzJkzQEbCZ0IG-20" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#333333;" value="Outputs:&amp;nbsp;&lt;br&gt;All meshes alligned" vertex="1">
+          <mxGeometry height="80" width="140" x="250" y="340" as="geometry" />
+        </mxCell>
+        <mxCell id="280JLmQpzJkzQEbCZ0IG-25" edge="1" parent="1" source="280JLmQpzJkzQEbCZ0IG-24" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" target="8" value="">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="280JLmQpzJkzQEbCZ0IG-24" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#333333;" value="Outputs:&lt;br&gt;mahalanobis distances for faces" vertex="1">
+          <mxGeometry height="70" width="170" x="530" y="525" as="geometry" />
+        </mxCell>
+        <mxCell id="n9ORAXsT2C1So65WSb6M-12" edge="1" parent="1" source="n9ORAXsT2C1So65WSb6M-11" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" target="11" value="">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="n9ORAXsT2C1So65WSb6M-11" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#333333;" value="Selecction of reference mouse and generation of reference mesh&amp;nbsp;" vertex="1">
+          <mxGeometry height="70" width="220" x="-260" y="210" as="geometry" />
         </mxCell>
       </root>
     </mxGraphModel>

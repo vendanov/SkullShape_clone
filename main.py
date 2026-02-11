@@ -281,7 +281,7 @@ def produce_gif_coh_comparison(ref_mesh: vtk.vtkPolyData,
 
     fig = plt.figure(figsize=(8, 6), dpi=300)
     ax = fig.add_subplot(111, projection='3d')
-    cmap = cm.get_cmap('coolwarm')
+    cmap = plt.get_cmap('coolwarm')
 
     norm = plt.Normalize(0, 1)
     trisurf = ax.plot_trisurf(pts[:, 0], pts[:, 1], pts[:, 2],
@@ -337,7 +337,7 @@ def produce_gif_ttest_comparison(ref_mesh: vtk.vtkPolyData,
 
     fig = plt.figure(figsize=(8, 6), dpi=300)
     ax = fig.add_subplot(111, projection='3d')
-    cmap = cm.get_cmap('coolwarm')
+    cmap = plt.get_cmap('coolwarm')
 
     norm = plt.Normalize(0, 1)
     trisurf = ax.plot_trisurf(pts[:, 0], pts[:, 1], pts[:, 2],
@@ -387,7 +387,7 @@ def produce_gif_mean_diff(ref_mesh: vtk.vtkPolyData,
 
     # Обрезаем: всё выше 95-го → приравниваем к 95-му
     mean_norms_clipped = np.clip(mean_norms, a_min=None, a_max=p95)
-    cmap = cm.get_cmap('viridis')
+    cmap = plt.get_cmap('viridis')
     norm = plt.Normalize(vmin=face_colors.min(), vmax=face_colors.max())
 
     # Создаём фигуру и ось
@@ -434,7 +434,7 @@ def uproduce_gif_std(ref_mesh: vtk.vtkPolyData,
     p95 = np.percentile(std_norms, 95)
     # Обрезаем: всё выше 95-го → приравниваем к 95-му
     std_norms_clipped = np.clip(std_norms, a_min=None, a_max=p95)
-    cmap = cm.get_cmap('viridis')
+    cmap = plt.get_cmap('viridis')
     if upper_limit is not None:
         norm = plt.Normalize(vmin=0, vmax=upper_limit)
     else:
@@ -494,7 +494,7 @@ def produce_gif_scalar_map(ref_mesh: vtk.vtkPolyData,
                               triangles=faces,
                               linewidth=0.2,
                               antialiased=True)
-    cmap = cm.get_cmap(cmap_name)
+    cmap = plt.get_cmap(cmap_name)
     norm = plt.Normalize(vmin=vmin, vmax=vmax)
     trisurf.set_facecolors(cmap(norm(values)))
     sm = cm.ScalarMappable(norm=norm, cmap=cmap)
@@ -1234,6 +1234,7 @@ def create_mahalanobis_heatmap_from_csv(
             mesh,
             values,
             str(output_gif),
+            cmap_name='magma',
             clip_percentile=None if fixate_plotting_max is not None else 95.0,
             max_value=fixate_plotting_max,
             colorbar_label="Mahalanobis distance",
