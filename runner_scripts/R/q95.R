@@ -220,6 +220,27 @@ comparison[, n_gt_q95_scaled :=
              (max(n_gt_q95, na.rm = TRUE) - min(n_gt_q95, na.rm = TRUE)) * (5 - 0.1)
 ]
 
+# ---- Histogram of points used per face_index (gt q95) ----
+comparison[is.na(n_gt_q95), n_gt_q95 := 0]
+message("Saving pooled face_index gt-q95 count histogram...")
+hist_p <- ggplot(comparison, aes(x = n_gt_q95)) +
+  geom_histogram(bins = 30, color = "white", fill = "#1E90FF") +
+  theme_light() +
+  labs(
+    x = "Number of points > q95 per face_index",
+    y = "Count of face_index",
+    title = paste0("Distribution of points above q95 per face_index (ALL YEARS: ",
+                   paste(names(year_dirs), collapse = "+"), ")")
+  ) +
+  theme(
+    panel.grid.minor = element_blank()
+  )
+
+ggsave(
+  file.path(out_base, paste0(Sys.Date(), "_ALL_YEARS_face_index_gtq95count_hist.jpg")),
+  hist_p, width = 14, height = 10, units = "cm"
+)
+
 # =========================
 # EXPORT (POOLED OUTPUTS)
 # =========================

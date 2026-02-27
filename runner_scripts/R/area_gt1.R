@@ -132,6 +132,7 @@ df_all <- rbindlist(
 )
 
 message("\nTotal pooled rows (all years): ", format(nrow(df_all), big.mark = ","))
+message("Total pooled subjects (area1): ", length(unique(df_all$subject)))
 
 # 1) Combined / pooled output across all years
 make_area1_output(df_all, "ALL_YEARS_POOLED")
