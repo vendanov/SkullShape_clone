@@ -1,13 +1,16 @@
-<mxfile host="app.diagrams.net" agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36" version="29.3.8">
+<mxfile host="app.diagrams.net" agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36" version="29.5.0">
   <diagram id="compare-cohorts-per-subject" name="Compare Cohorts Per Subject (Schematic)">
-    <mxGraphModel dx="2624" dy="918" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1169" pageHeight="827" math="0" shadow="0">
+    <mxGraphModel dx="3363" dy="1195" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1169" pageHeight="827" math="0" shadow="0">
       <root>
         <mxCell id="0" />
         <mxCell id="1" parent="0" />
+        <mxCell id="8JGI5oIrBg9FLWjzkWd0-11" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#d80073;strokeColor=#A50040;fontColor=#ffffff;" value="" vertex="1">
+          <mxGeometry height="310" width="330" as="geometry" />
+        </mxCell>
         <mxCell id="280JLmQpzJkzQEbCZ0IG-14" edge="1" parent="1" source="2" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" target="4">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="2" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f4f4f4;strokeColor=#333333;" value="A) Head image (KO)&lt;br&gt;B) Cohort for comparion (head images)&amp;nbsp;" vertex="1">
+        <mxCell id="2" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f4f4f4;strokeColor=#333333;" value="A) Head image&lt;br&gt;B) Cohort for comparion (head images)&amp;nbsp;" vertex="1">
           <mxGeometry height="80" width="230" x="40" y="20" as="geometry" />
         </mxCell>
         <mxCell id="280JLmQpzJkzQEbCZ0IG-15" edge="1" parent="1" source="10" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" target="4">
@@ -29,23 +32,23 @@
           <mxGeometry relative="1" as="geometry">
             <Array as="points">
               <mxPoint x="1110" y="150" />
-              <mxPoint x="1110" y="310" />
-              <mxPoint x="55" y="310" />
+              <mxPoint x="1110" y="320" />
+              <mxPoint x="55" y="320" />
               <mxPoint x="55" y="380" />
             </Array>
           </mxGeometry>
         </mxCell>
-        <mxCell id="5" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#333333;" value="Outputs:&lt;div&gt;A) Mesh (KO) B) Meshes for cohort&lt;/div&gt;&lt;div&gt;2) Meshes reference cohort&lt;/div&gt;" vertex="1">
-          <mxGeometry height="80" width="210" x="850" y="110" as="geometry" />
+        <mxCell id="5" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#333333;" value="Outputs:&lt;div&gt;A) Mesh of head image&amp;nbsp;&lt;/div&gt;&lt;div&gt;B) Meshes for cohort&lt;/div&gt;&lt;div&gt;2) Meshes reference cohort&lt;/div&gt;" vertex="1">
+          <mxGeometry height="80" width="210" x="851" y="110" as="geometry" />
         </mxCell>
-        <mxCell id="7" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#333333;" value="Compute Mahalanobis&lt;div&gt;for each vertex on mesh (subject vs reference cohort meshes)&lt;/div&gt;" vertex="1">
+        <mxCell id="7" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" value="A) Compute Mahalanobis&lt;div&gt;for each vertex on mesh (subject vs reference cohort meshes)&lt;/div&gt;" vertex="1">
           <mxGeometry height="80" width="260" x="190" y="520" as="geometry" />
         </mxCell>
-        <mxCell id="8" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#333333;" value="Generate per-subject GIFs" vertex="1">
-          <mxGeometry height="70" width="220" x="505" y="340" as="geometry" />
+        <mxCell id="8" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" value="Generate per-subject GIFs" vertex="1">
+          <mxGeometry height="70" width="220" x="730" y="525" as="geometry" />
         </mxCell>
-        <mxCell id="9" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#333333;" value="Outputs:&lt;br&gt;Mahalanobis GIFs&lt;div&gt;&lt;br&gt;&lt;/div&gt;" vertex="1">
-          <mxGeometry height="110" width="260" x="825" y="320" as="geometry" />
+        <mxCell id="9" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" value="Outputs:&lt;br&gt;Mahalanobis GIFs&lt;div&gt;&lt;br&gt;&lt;/div&gt;" vertex="1">
+          <mxGeometry height="110" width="260" x="980" y="505" as="geometry" />
         </mxCell>
         <mxCell id="e3" edge="1" parent="1" source="4" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" target="5">
           <mxGeometry relative="1" as="geometry" />
@@ -61,11 +64,17 @@
         <mxCell id="280JLmQpzJkzQEbCZ0IG-19" edge="1" parent="1" source="280JLmQpzJkzQEbCZ0IG-17" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" target="280JLmQpzJkzQEbCZ0IG-20" value="">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="280JLmQpzJkzQEbCZ0IG-17" parent="1" style="whiteSpace=wrap;html=1;fillColor=#76608a;strokeColor=#432D57;rounded=1;fontColor=#ffffff;" value="Run General Procrustes alignment on all meshes" vertex="1">
+        <mxCell id="280JLmQpzJkzQEbCZ0IG-17" parent="1" style="whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;rounded=1;" value="Run General Procrustes alignment on all meshes" vertex="1">
           <mxGeometry height="60" width="150" x="70" y="350" as="geometry" />
         </mxCell>
-        <mxCell id="280JLmQpzJkzQEbCZ0IG-22" edge="1" parent="1" source="280JLmQpzJkzQEbCZ0IG-20" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" target="7" value="">
-          <mxGeometry relative="1" as="geometry" />
+        <mxCell id="280JLmQpzJkzQEbCZ0IG-22" edge="1" parent="1" source="280JLmQpzJkzQEbCZ0IG-20" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" target="7e5ppZ3mdL3I-DvPp26F-11" value="">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="320" y="460" />
+              <mxPoint x="20" y="460" />
+              <mxPoint x="20" y="690" />
+            </Array>
+          </mxGeometry>
         </mxCell>
         <mxCell id="280JLmQpzJkzQEbCZ0IG-20" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#333333;" value="Outputs:&amp;nbsp;&lt;br&gt;All meshes alligned" vertex="1">
           <mxGeometry height="80" width="140" x="250" y="340" as="geometry" />
@@ -73,14 +82,36 @@
         <mxCell id="280JLmQpzJkzQEbCZ0IG-25" edge="1" parent="1" source="280JLmQpzJkzQEbCZ0IG-24" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" target="8" value="">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="280JLmQpzJkzQEbCZ0IG-24" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#333333;" value="Outputs:&lt;br&gt;mahalanobis distances for faces" vertex="1">
+        <mxCell id="280JLmQpzJkzQEbCZ0IG-24" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" value="Outputs:&lt;br&gt;mahalanobis distances for faces" vertex="1">
           <mxGeometry height="70" width="170" x="530" y="525" as="geometry" />
         </mxCell>
         <mxCell id="n9ORAXsT2C1So65WSb6M-12" edge="1" parent="1" source="n9ORAXsT2C1So65WSb6M-11" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" target="11" value="">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="n9ORAXsT2C1So65WSb6M-11" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#333333;" value="Selecction of reference mouse and generation of reference mesh&amp;nbsp;" vertex="1">
+        <mxCell id="n9ORAXsT2C1So65WSb6M-11" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" value="Selecction of reference mouse and generation of reference mesh&amp;nbsp;" vertex="1">
           <mxGeometry height="70" width="220" x="-260" y="210" as="geometry" />
+        </mxCell>
+        <mxCell id="7e5ppZ3mdL3I-DvPp26F-14" edge="1" parent="1" source="7e5ppZ3mdL3I-DvPp26F-11" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" target="7e5ppZ3mdL3I-DvPp26F-13" value="">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="7e5ppZ3mdL3I-DvPp26F-11" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" value="B) Compute Statistical difference analysys: T-test for each face and Kolmogorov-Smirnov test" vertex="1">
+          <mxGeometry height="80" width="260" x="190" y="650" as="geometry" />
+        </mxCell>
+        <mxCell id="7e5ppZ3mdL3I-DvPp26F-12" edge="1" parent="1" source="280JLmQpzJkzQEbCZ0IG-20" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=0.5;entryY=0;entryDx=0;entryDy=0;exitX=0.5;exitY=1;exitDx=0;exitDy=0;" target="7" value="">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="320" y="500" />
+              <mxPoint x="320" y="500" />
+            </Array>
+            <mxPoint x="570" y="450" as="sourcePoint" />
+            <mxPoint x="270" y="545" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="7e5ppZ3mdL3I-DvPp26F-13" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" value="Outputs:&lt;br&gt;T-test (p&amp;lt;0.05) and KS test gif visualisations" vertex="1">
+          <mxGeometry height="70" width="170" x="530" y="655" as="geometry" />
+        </mxCell>
+        <mxCell id="JFY1F2Ew3XQokm6CrdP7-13" parent="1" style="text;whiteSpace=wrap;html=1;" value="&lt;p&gt;&lt;font style=&quot;font-size: 18px;&quot;&gt;&lt;strong&gt;Overview of the two skull analysis pipelines.&lt;/strong&gt;&lt;br&gt;(A) In the single-subject branch, a head image is processed to generate an aligned surface mesh, which is compared against the reference distribution to compute per-face Mahalanobis distances; results are visualised as per-subject Mahalanobis GIFs.&lt;br&gt;(B) In the cohort branch, multiple subjects are processed to aligned meshes and analysed collectively to compute cohort-level per-face statistical differences (t-test and Kolmogorov–Smirnov test), visualised as significance GIFs.&lt;/font&gt;&lt;/p&gt;" vertex="1">
+          <mxGeometry height="150" width="560" x="50" y="760" as="geometry" />
         </mxCell>
       </root>
     </mxGraphModel>

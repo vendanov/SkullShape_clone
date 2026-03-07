@@ -21,6 +21,70 @@ Direct workflow linkage:
 - `visualize_subject` -> no Snakemake run; reads already-registered meshes
 - `generate_full_body` -> runs full-body conversion/detection and head extraction workflows
 
+### What Each Command Computes
+
+`compare_cohorts` has two modes:
+
+- `--method group`:
+  - Runs `generic_coregistration.smk` for both cohorts to produce `head_affine_registered.obj`.
+  - Builds cohort means:
+    - per-cohort mean mesh (`cohort_1_mean.obj`, `cohort_2_mean.obj`) after Procrustes alignment.
+    - then rigidly aligns all subjects from both cohorts together before statistical testing.
+  - Computes per-face statistics (face = triangle cell):
+    - Face centroid per subject: mean of that face's 3D vertex coordinates.
+    - Mean shift vector per face:
+      - `delta_face = mean(centroid_face in cohort_1) - mean(centroid_face in cohort_2)` (x, y, z).
+      - `mean_diff_<cohort1>_<cohort2>.gif` visualizes `||delta_face||`.
+    - Kolmogorov-Smirnov test per face:
+      - Two-sample KS on each axis independently (`x`, `y`, `z`) across cohorts.
+      - A face is colored significant if any axis has `p < 0.05`.
+      - Output: `cohort_comparison_<cohort1>_<cohort2>.gif`.
+    - Welch/independent t-test per face:
+      - `ttest_ind` per axis (`x`, `y`, `z`) between cohorts.
+      - A face is colored significant if any axis has `p < 0.05`.
+      - Output: `ttest_comparison_<cohort1>_<cohort2>.gif`.
+
+- `--method per_subject`:
+  - Still runs registration for both cohorts first.
+  - Chooses one cohort as reference distribution (`--ref_distribution`) and scores each subject from the other cohort.
+  - For each query subject:
+    - Rigidly aligns query subject + all reference subjects (GPA).
+    - For every vertex index, models the reference 3D coordinate distribution with covariance/precision.
+    - Computes vertex Mahalanobis distance:
+      - `d^2 = (x - mu)^T * Precision * (x - mu)`.
+    - Converts to face score:
+      - `face_mahal = sqrt(mean(d^2 of the face vertices))`.
+  - Summary metrics:
+    - `mahalanobis_per_face.csv`: per subject, per face Mahalanobis distance.
+    - `mahalanobis_area_gt_5.csv`: percentage of mesh surface area with `face_mahal > 5`.
+      - `area_percent = 100 * area(face_mahal > 5) / total_mesh_area`.
+  - Outlier retry logic:
+    - If both area and face-count exceed 40% above threshold (`>5`), the pipeline re-extracts/re-registers that subject with progressively tighter extraction margins and recomputes.
+  - Visualization:
+    - `<subject>_to_<ref_distribution>_mahalanobis.gif` heatmaps per subject.
+
+`one_cohort_statistics`:
+
+- Runs registration for the cohort, then rigid GPA alignment across its subjects.
+- Computes per-face variability from face centroids:
+  - For each face and subject, compute centroid `(x, y, z)`.
+  - Compute standard deviation across subjects for each axis -> `std_face = (std_x, std_y, std_z)`.
+  - GIF scalar map uses `||std_face||` as the variability intensity.
+- Output:
+  - `<cohort_name>_std.gif`.
+- `--upper_limit` can clamp the colormap upper bound for easier cross-run visual comparison.
+
+`visualize_subject`:
+
+- Does not run Snakemake.
+- Loads existing `head_affine_registered.obj` files, aligns the selected subject with reference cohort meshes, and launches an interactive Procrustes viewer (subject, cohort mean, and peer overlays).
+
+`generate_full_body`:
+
+- Runs `mouse_full_body.smk` then `extract_head_from_full_body.smk`.
+- Produces full-body reconstruction intermediates and extracted head CT inputs for later skull registration/statistical commands.
+- This command itself does not compute cohort statistics; it prepares data for downstream analysis.
+
 ## Platform Requirements
 
 - OS: Linux is the intended runtime for Snakemake workflows

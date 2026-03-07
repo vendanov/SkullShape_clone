@@ -17,15 +17,20 @@ RESULT_ROOT.mkdir(parents=True, exist_ok=True)
 
 FULL_BODY = ROOT / "full_body_workdir"
 
+def is_phantom_subject(name: str) -> bool:
+    return "phantom" in name.lower() or "fantom" in name.lower() or "test" in name.lower()
+
+
 CONFIG_SUBJECTS = config.get("subjects") if "subjects" in config else None
 SUBJECTS = [
     d.name for d in FULL_BODY.iterdir()
     if d.is_dir()
     and (d / "full_body_top_classes.xml").exists()
     and (d / "full_body_image_raw.nii.gz").exists()
+    and not is_phantom_subject(d.name)
 ]
 if CONFIG_SUBJECTS:
-    SUBJECTS = [s for s in SUBJECTS if s in set(CONFIG_SUBJECTS)]
+    SUBJECTS = [s for s in SUBJECTS if s in set(CONFIG_SUBJECTS) and not is_phantom_subject(s)]
 
 rule all:
     input:
