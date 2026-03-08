@@ -916,6 +916,49 @@ def _compute_mahalanobis_for_subject(subject: str,
     return mahal, aligned_key_mesh, area_percent
 
 
+def _compute_mahalanobis_from_aligned_meshes(subject: str,
+                                             aligned_meshes: Dict[str, vtk.vtkPolyData],
+                                             area_threshold: float) -> Tuple[np.ndarray, float]:
+    aligned_key_mesh = aligned_meshes[subject]
+    aligned_ref_meshes = [mesh for key, mesh in aligned_meshes.items() if key != subject]
+    if not aligned_ref_meshes:
+        raise ValueError(f"Need at least one reference mesh to compute Mahalanobis for {subject}.")
+
+    pts_key, faces = read_vtk_polydata_points_faces(aligned_key_mesh)
+    ref_points_stack = np.stack(
+        [read_vtk_polydata_points_faces(mesh)[0] for mesh in aligned_ref_meshes],
+        axis=0,
+    )
+    n_ref, n_points, _ = ref_points_stack.shape
+
+    mu_pts = np.zeros((n_points, 3), dtype=np.float64)
+    prec_pts = np.zeros((n_points, 3, 3), dtype=np.float64)
+    eps = 1e-6
+
+    for p in range(n_points):
+        X = ref_points_stack[:, p, :]
+        mu_p = X.mean(axis=0)
+        C = np.cov(X, rowvar=False) if n_ref > 1 else np.eye(3) * eps
+        C = np.asarray(C, dtype=np.float64)
+        C.flat[::4] += eps
+        mu_pts[p] = mu_p
+        prec_pts[p] = np.linalg.pinv(C)
+
+    deltas = pts_key - mu_pts
+    d2_pts = np.einsum('pi,pij,pj->p', deltas, prec_pts, deltas, optimize=True)
+    d2_pts = np.clip(d2_pts, 0.0, None)
+    mahal = np.sqrt(d2_pts[faces].mean(axis=1))
+
+    tri_pts = pts_key[faces]
+    vec1 = tri_pts[:, 1, :] - tri_pts[:, 0, :]
+    vec2 = tri_pts[:, 2, :] - tri_pts[:, 0, :]
+    face_areas = 0.5 * np.linalg.norm(np.cross(vec1, vec2), axis=1)
+    total_area = float(face_areas.sum())
+    area_over = float(face_areas[mahal > area_threshold].sum())
+    area_percent = 100.0 * area_over / total_area if total_area > 0 else 0.0
+    return mahal, area_percent
+
+
 def _percent_over_threshold(mahal: np.ndarray, threshold: float) -> float:
     if mahal.size == 0:
         return 0.0
@@ -1099,6 +1142,74 @@ def _append_mahalanobis_rows(subject_info: Dict[str, Dict],
                 "face_index": face_idx,
                 "mahalanobis": float(mahal_val),
             })
+
+
+def _write_one_cohort_subject_summary(subject_info: Dict[str, Dict],
+                                      summary_csv: Path,
+                                      threshold: float) -> None:
+    rows = []
+    for subject, info in sorted(subject_info.items()):
+        mahal = np.asarray(info.get("mahal", []), dtype=np.float64)
+        rows.append({
+            "subject": subject,
+            "source": info.get("source", "computed"),
+            "n_faces": int(mahal.size),
+            "mean_mahalanobis": float(mahal.mean()) if mahal.size else 0.0,
+            "median_mahalanobis": float(np.median(mahal)) if mahal.size else 0.0,
+            "max_mahalanobis": float(mahal.max()) if mahal.size else 0.0,
+            "percent_faces_mahal_gt_threshold": float(info.get("percent_over", 0.0)),
+            "area_percent_mahal_gt_threshold": float(info.get("area_percent", 0.0)),
+            "threshold": float(threshold),
+        })
+
+    with open(summary_csv, "w", encoding="utf-8", newline="") as fh:
+        writer = csv.DictWriter(
+            fh,
+            fieldnames=[
+                "subject",
+                "source",
+                "n_faces",
+                "mean_mahalanobis",
+                "median_mahalanobis",
+                "max_mahalanobis",
+                "percent_faces_mahal_gt_threshold",
+                "area_percent_mahal_gt_threshold",
+                "threshold",
+            ],
+        )
+        writer.writeheader()
+        writer.writerows(rows)
+    print(f"Saved one-cohort subject summary at {summary_csv}")
+
+
+def _compute_one_cohort_subject_outliers(cohort_meshes: Dict[str, Path],
+                                         threshold: float) -> Dict[str, Dict]:
+    if len(cohort_meshes) < 2:
+        print("[WARN] Need at least two registered subjects to compute one-cohort Mahalanobis outlier statistics.")
+        return {}
+
+    print(f"[INFO] Running one rigid GPA for {len(cohort_meshes)} cohort subjects")
+    aligned_meshes = gpa_new(cohort_meshes, modes="rigid", use_cache=True)
+    subject_info: Dict[str, Dict] = {}
+    for subject in sorted(aligned_meshes.keys()):
+        mahal, area_percent = _compute_mahalanobis_from_aligned_meshes(
+            subject,
+            aligned_meshes,
+            threshold,
+        )
+        percent_over = _percent_over_threshold(mahal, threshold)
+        subject_info[subject] = {
+            "source": "computed",
+            "area_percent": area_percent,
+            "percent_over": percent_over,
+            "mahal": mahal,
+            "aligned_mesh": None,
+        }
+        print(
+            f"[INFO] One-cohort outlier check {subject}: "
+            f"area_percent={area_percent:.2f}, percent_over={percent_over:.2f}"
+        )
+    return subject_info
 
 
 def _emit_subject_gifs(subject_info: Dict[str, Dict],
@@ -1383,7 +1494,14 @@ def compare_cohorts(cohort_1: str, cohort_2: str, reference_mouse: str, result_d
 
 
 
-def one_cohort_statistics(cohort: str, reference_mouse: str, result_dir: str,upper_limit: Optional[float] = None):
+def one_cohort_statistics(cohort: str,
+                          reference_mouse: str,
+                          result_dir: str,
+                          upper_limit: Optional[float] = None,
+                          mahal_summary_csv: Optional[str] = None,
+                          mahal_threshold: float = 5.0,
+                          skip_variability_gif: bool = False,
+                          fast_outliers: bool = False):
     """
     Compute the statistics for one cohort of mice and save the results to a file.
     """
@@ -1402,19 +1520,62 @@ def one_cohort_statistics(cohort: str, reference_mouse: str, result_dir: str,upp
     #compute_and_save_mean_mesh(cohort_meshes, result_dir / "cohort_mean.obj")
 
     print(f"Number of meshes in cohort: {len(cohort_meshes)}")
-    coh_aligned = gpa_new(cohort_meshes, modes="rigid")
+    if not cohort_meshes:
+        raise ValueError(f"No registered meshes found in cohort: {cohort}")
 
+    if not skip_variability_gif:
+        coh_aligned = gpa_new(cohort_meshes, modes="rigid")
+        std_results = compute_facewise_centroid_std(coh_aligned)
+        print("std_results", std_results)
+        mesh_file = next(iter(coh_aligned.values()))
+        uproduce_gif_std(mesh_file,std_results, result_dir / f"{cohort.name}_std.gif", upper_limit=upper_limit)
 
-
-
-    std_results = compute_facewise_centroid_std(coh_aligned)
-
-    print("std_results", std_results)
-
-    mesh_file = next(iter(coh_aligned.values()))
-    # plot results
-
-    uproduce_gif_std(mesh_file,std_results, result_dir / f"{cohort.name}_std.gif", upper_limit=upper_limit)
+    if mahal_summary_csv is not None:
+        if fast_outliers:
+            print("[INFO] Using fast approximate outlier mode (single cohort-wide GPA).")
+            subject_info = _compute_one_cohort_subject_outliers(
+                cohort_meshes=cohort_meshes,
+                threshold=mahal_threshold,
+            )
+        else:
+            print("[INFO] Using exact outlier mode (leave-one-out GPA per subject).")
+            subject_info = {}
+            for subject, mesh_path in sorted(cohort_meshes.items()):
+                ref_meshes = {key: value for key, value in cohort_meshes.items() if key != subject}
+                if not ref_meshes:
+                    continue
+                mahal, _, area_percent = _compute_mahalanobis_for_subject(
+                    subject,
+                    mesh_path,
+                    ref_meshes,
+                    mahal_threshold,
+                    use_cache=True,
+                )
+                percent_over = _percent_over_threshold(mahal, mahal_threshold)
+                subject_info[subject] = {
+                    "source": "computed_exact",
+                    "area_percent": area_percent,
+                    "percent_over": percent_over,
+                    "mahal": mahal,
+                    "aligned_mesh": None,
+                }
+                print(
+                    f"[INFO] Exact one-cohort outlier check {subject}: "
+                    f"area_percent={area_percent:.2f}, percent_over={percent_over:.2f}"
+                )
+        if subject_info:
+            area_rows: List[Dict] = []
+            mahal_rows: List[Dict] = []
+            _append_mahalanobis_rows(subject_info, area_rows, mahal_rows)
+            summary_csv = Path(mahal_summary_csv)
+            mahal_csv = result_dir / f"{cohort.name}_mahalanobis_per_face.csv"
+            _write_one_cohort_subject_summary(subject_info, summary_csv, mahal_threshold)
+            _write_mahalanobis_cache(
+                area_rows,
+                mahal_rows,
+                result_dir / f"{cohort.name}_mahalanobis_area_summary.csv",
+                mahal_csv,
+            )
 
 
 
@@ -1525,6 +1686,28 @@ def main():
     self_aver_parser.add_argument("--save_statics",
                                       action="store_true",
                                       help="Save the statistics to a file.")
+    self_aver_parser.add_argument(
+        "--mahalanobis_summary_csv",
+        type=str,
+        default=None,
+        help="Optional summary CSV path for leave-one-out Mahalanobis outlier statistics.",
+    )
+    self_aver_parser.add_argument(
+        "--mahal_threshold",
+        type=float,
+        default=5.0,
+        help="Threshold used to summarize one-cohort Mahalanobis outlier burden.",
+    )
+    self_aver_parser.add_argument(
+        "--skip_variability_gif",
+        action="store_true",
+        help="Skip the cohort variability GIF and only compute numeric outputs.",
+    )
+    self_aver_parser.add_argument(
+        "--fast_outliers",
+        action="store_true",
+        help="Use faster approximate one-cohort outlier computation based on a single shared GPA.",
+    )
 
 
 
@@ -1561,7 +1744,17 @@ def main():
         result_dir = Path(args.result_dir)
         if not result_dir.exists():
             os.makedirs(result_dir)
-        one_cohort_statistics(args.cohort, args.reference_mouse, result_dir, upper_limit=args.upper_limit)
+        summary_csv = args.mahalanobis_summary_csv
+        one_cohort_statistics(
+            args.cohort,
+            args.reference_mouse,
+            result_dir,
+            upper_limit=args.upper_limit,
+            mahal_summary_csv=str(summary_csv) if summary_csv is not None else None,
+            mahal_threshold=args.mahal_threshold,
+            skip_variability_gif=args.skip_variability_gif,
+            fast_outliers=args.fast_outliers,
+        )
 
     elif args.cmd == "mahalanobis_csv_heatmap":
         create_mahalanobis_heatmap_from_csv(
