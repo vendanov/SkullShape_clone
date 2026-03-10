@@ -1,4 +1,4 @@
-from setuptools import setup, find_packages
+﻿from setuptools import setup, find_packages
 import os
 
 # Read the contents of README.md for the long description
@@ -42,6 +42,7 @@ setup(
         'matplotlib',
         'scikit-learn',
         'snakemake',
+        'typer',
         # Add other dependencies as needed
     ],
     extras_require={

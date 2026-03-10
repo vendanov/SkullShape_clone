@@ -1,4 +1,4 @@
-numpy
+﻿numpy
 pandas
 matplotlib
 scikit-learn
@@ -19,3 +19,4 @@ ipython
 tensorflow
 mysql-connector-python
 jupyter
+typer
