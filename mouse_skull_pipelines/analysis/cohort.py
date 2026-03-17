@@ -29,8 +29,16 @@ from mouse_skull_pipelines.visualization.gifs import (
     produce_gif_ttest_comparison,
     uproduce_gif_std,
 )
-def should_recompute(area_percent: float, percent_points_over: float) -> bool:
-    return area_percent >= 40.0 and percent_points_over >= 40.0
+def should_recompute(
+    area_percent: float,
+    percent_points_over: float,
+    area_percent_threshold: float = 40.0,
+    face_percent_threshold: float = 40.0,
+) -> bool:
+    return (
+        area_percent >= area_percent_threshold
+        and percent_points_over >= face_percent_threshold
+    )
 
 
 def _rmtree_with_retries(path: Path, retries: int = 6, base_delay_s: float = 0.2) -> None:
@@ -261,9 +269,24 @@ def _load_mahalanobis_cache(area_csv: Path,
     if area_csv.exists() and mahal_csv.exists():
         with open(area_csv, "r", encoding="utf-8", newline="") as fh:
             reader = csv.DictReader(fh)
+            area_col = None
+            if reader.fieldnames:
+                if "area_percent_mahal_gt_threshold" in reader.fieldnames:
+                    area_col = "area_percent_mahal_gt_threshold"
+                elif "area_percent_mahal_gt_5" in reader.fieldnames:
+                    area_col = "area_percent_mahal_gt_5"
+                else:
+                    for candidate in reader.fieldnames:
+                        if candidate.startswith("area_percent_mahal_gt_"):
+                            area_col = candidate
+                            break
+            if area_col is None:
+                raise ValueError(
+                    f"Area CSV {area_csv} missing an area_percent_mahal_gt_* column."
+                )
             for row in reader:
                 subject = row["subject"]
-                area_val = float(row["area_percent_mahal_gt_5"])
+                area_val = float(row[area_col])
                 cached_area[subject] = area_val
         with open(mahal_csv, "r", encoding="utf-8", newline="") as fh:
             reader = csv.DictReader(fh)
@@ -344,7 +367,9 @@ def _recompute_outliers(outliers: List[str],
                         query_cohort_dir: Path,
                         reference_mouse: Path,
                         area_threshold: float,
-                        subject_info: Dict[str, Dict]) -> Tuple[set, bool]:
+                        subject_info: Dict[str, Dict],
+                        recompute_area_percent_threshold: float,
+                        recompute_face_percent_threshold: float) -> Tuple[set, bool]:
     # Retry extraction with tighter margins for persistent outliers.
     force_gif_subjects = set()
     write_cache = False
@@ -372,7 +397,12 @@ def _recompute_outliers(outliers: List[str],
                     "aligned_mesh": aligned_key_mesh,
                 }
                 force_gif_subjects.add(subject)
-                if should_recompute(area_percent, percent_over):
+                if should_recompute(
+                    area_percent,
+                    percent_over,
+                    recompute_area_percent_threshold,
+                    recompute_face_percent_threshold,
+                ):
                     still_outliers.append(subject)
             outliers = still_outliers
             write_cache = True
@@ -390,7 +420,7 @@ def _append_mahalanobis_rows(subject_info: Dict[str, Dict],
     for key, info in subject_info.items():
         area_rows.append({
             "subject": key,
-            "area_percent_mahal_gt_5": info["area_percent"],
+            "area_percent_mahal_gt_threshold": info["area_percent"],
         })
         for face_idx, mahal_val in enumerate(info["mahal"]):
             mahal_rows.append({
@@ -507,9 +537,9 @@ def _write_mahalanobis_cache(area_rows: List[Dict],
     if area_rows:
         area_latest = {}
         for row in area_rows:
-            area_latest[row["subject"]] = row["area_percent_mahal_gt_5"]
+            area_latest[row["subject"]] = row["area_percent_mahal_gt_threshold"]
         area_rows[:] = [
-            {"subject": subject, "area_percent_mahal_gt_5": area_val}
+            {"subject": subject, "area_percent_mahal_gt_threshold": area_val}
             for subject, area_val in area_latest.items()
         ]
     if mahal_rows:
@@ -523,7 +553,10 @@ def _write_mahalanobis_cache(area_rows: List[Dict],
         ]
     if area_rows:
         with open(area_csv, "w", encoding="utf-8", newline="") as fh:
-            writer = csv.DictWriter(fh, fieldnames=["subject", "area_percent_mahal_gt_5"])
+            writer = csv.DictWriter(
+                fh,
+                fieldnames=["subject", "area_percent_mahal_gt_threshold"],
+            )
             writer.writeheader()
             writer.writerows(area_rows)
         print(f"Saved Mahalanobis area summary at {area_csv}")
@@ -614,7 +647,10 @@ def compare_cohorts_per_subject(cohort_1: str,
                                 reference_mouse: str,
                                 result_dir: str,
                                 ref_distribution: str = "cohort_2",
-                                fixate_plotting_max: Optional[float] = None):
+                                fixate_plotting_max: Optional[float] = None,
+                                area_threshold: float = 5.0,
+                                recompute_area_percent_threshold: float = 40.0,
+                                recompute_face_percent_threshold: float = 40.0):
     """
     Per-subject comparison: for each mouse in one cohort, compute how far it is
     from the distribution of the other cohort.
@@ -648,10 +684,14 @@ def compare_cohorts_per_subject(cohort_1: str,
 
     # Compute per-subject Mahalanobis against the reference distribution.
 
-    area_threshold = 5.0
     area_rows = []
     mahal_rows = []
-    area_csv = res_dir_new / "mahalanobis_area_gt_5.csv"
+    threshold_label = str(area_threshold).replace(".", "p")
+    area_csv = (
+        res_dir_new / "mahalanobis_area_gt_5.csv"
+        if area_threshold == 5.0
+        else res_dir_new / f"mahalanobis_area_gt_{threshold_label}.csv"
+    )
     mahal_csv = res_dir_new / "mahalanobis_per_face.csv"
     cached_area, cached_mahal, write_cache = _load_mahalanobis_cache(area_csv, mahal_csv)
     subject_info, computed_cache = _compute_subject_info(
@@ -661,7 +701,12 @@ def compare_cohorts_per_subject(cohort_1: str,
 
     # Recompute outliers and flag them for GIF regeneration.
     outliers = [k for k, info in subject_info.items()
-                if should_recompute(info["area_percent"], info["percent_over"])]
+                if should_recompute(
+                    info["area_percent"],
+                    info["percent_over"],
+                    recompute_area_percent_threshold,
+                    recompute_face_percent_threshold,
+                )]
     _remove_outlier_gifs(outliers, res_dir_new, ref_distribution)
     force_gif_subjects, recomputed_cache = _recompute_outliers(
         outliers,
@@ -671,6 +716,8 @@ def compare_cohorts_per_subject(cohort_1: str,
         reference_mouse,
         area_threshold,
         subject_info,
+        recompute_area_percent_threshold,
+        recompute_face_percent_threshold,
     )
     write_cache = write_cache or recomputed_cache
 

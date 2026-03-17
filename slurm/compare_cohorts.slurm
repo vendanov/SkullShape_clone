@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH --job-name=compare_cohorts
-#SBATCH --cpus-per-task=24
-#SBATCH --mem=725000M
+#SBATCH --cpus-per-task=13
+#SBATCH --mem=362500M
 #SBATCH --time=240:00:00
 #SBATCH --output=logs/%x_%j.out
 #SBATCH --error=logs/%x_%j.err
@@ -12,6 +12,8 @@ set -euo pipefail
 
 # Paths (edit as needed or override via args)
 # Usage: sbatch compare_cohorts.slurm <cohort_path> <output_path>
+
+# cpus set to 12 for 4 tasks
 REPO="/home/varhai/mouse_skull_pipelines"
 REPO_FULL_BODY="/home/varhai/mouse_full_body"
 REF_DIR="/home/varhai/PRIMUS/data/83_BIOINFORMATICS/Igor/reference_image"
@@ -65,6 +67,8 @@ python "$REPO/main.py" compare_cohorts \
   --result_dir "$RESULT_DIR" \
   --method per_subject \
   --ref_distribution cohort_1\
+  --recompute_area_percent_threshold 10 \
+  --recompute_face_percent_threshold 10 \
   --fixate_plotting_max 5.0
 
 echo "[INFO] Running compare_cohorts (per_subject)"
@@ -75,4 +79,8 @@ python "$REPO/main.py" compare_cohorts \
   --result_dir "$RESULT_DIR" \
   --method per_subject \
   --ref_distribution cohort_1\
-  --fixate_plotting_max 5.0
+  --recompute_area_percent_threshold 10 \
+  --recompute_face_percent_threshold 10 \
+  --fixate_plotting_max 5.0 
+  
+  

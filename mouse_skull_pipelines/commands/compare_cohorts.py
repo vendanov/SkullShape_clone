@@ -12,6 +12,9 @@ def run(
     method: str = "group",
     ref_distribution: str = "cohort_2",
     fixate_plotting_max: Optional[float] = None,
+    area_threshold: float = 5.0,
+    recompute_area_percent_threshold: float = 40.0,
+    recompute_face_percent_threshold: float = 40.0,
 ) -> None:
     result_path = Path(result_dir)
     result_path.mkdir(parents=True, exist_ok=True)
@@ -24,6 +27,9 @@ def run(
             result_path,
             ref_distribution=ref_distribution,
             fixate_plotting_max=fixate_plotting_max,
+            area_threshold=area_threshold,
+            recompute_area_percent_threshold=recompute_area_percent_threshold,
+            recompute_face_percent_threshold=recompute_face_percent_threshold,
         )
         return
 

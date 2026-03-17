@@ -32,6 +32,9 @@ def test_compare_cohorts_group_dispatch(monkeypatch):
     assert result.exit_code == 0
     assert calls[0]["method"] == "group"
     assert calls[0]["cohort_1"] == "c1"
+    assert calls[0]["area_threshold"] == 5.0
+    assert calls[0]["recompute_area_percent_threshold"] == 40.0
+    assert calls[0]["recompute_face_percent_threshold"] == 40.0
 
 
 def test_compare_cohorts_per_subject_dispatch(monkeypatch):
@@ -60,6 +63,12 @@ def test_compare_cohorts_per_subject_dispatch(monkeypatch):
             "cohort_1",
             "--fixate_plotting_max",
             "3.5",
+            "--area_threshold",
+            "6.25",
+            "--recompute_area_percent_threshold",
+            "55",
+            "--recompute_face_percent_threshold",
+            "30",
         ],
     )
 
@@ -67,6 +76,9 @@ def test_compare_cohorts_per_subject_dispatch(monkeypatch):
     assert calls[0]["method"] == "per_subject"
     assert calls[0]["ref_distribution"] == "cohort_1"
     assert calls[0]["fixate_plotting_max"] == 3.5
+    assert calls[0]["area_threshold"] == 6.25
+    assert calls[0]["recompute_area_percent_threshold"] == 55.0
+    assert calls[0]["recompute_face_percent_threshold"] == 30.0
 
 
 def test_generate_full_body_accepts_underscore_alias(monkeypatch):

@@ -23,6 +23,9 @@ def compare_cohorts_command(
     method: str = typer.Option("group", "--method", help="Comparison method: group (default) or per_subject"),
     ref_distribution: str = typer.Option("cohort_2", "--ref_distribution", help="For per_subject: which cohort defines the reference distribution."),
     fixate_plotting_max: Optional[float] = typer.Option(None, "--fixate_plotting_max", help="For per_subject: cap Mahalanobis distances and colorbar at this value."),
+    area_threshold: float = typer.Option(5.0, "--area_threshold", help="For per_subject: Mahalanobis threshold used for area_gt and outlier-trigger recomputation."),
+    recompute_area_percent_threshold: float = typer.Option(40.0, "--recompute_area_percent_threshold", help="For per_subject: trigger recomputation when area_percent >= this value."),
+    recompute_face_percent_threshold: float = typer.Option(40.0, "--recompute_face_percent_threshold", help="For per_subject: trigger recomputation when percent_over >= this value."),
 ) -> None:
     if method not in {"group", "per_subject"}:
         raise typer.BadParameter("method must be one of: group, per_subject")
@@ -36,6 +39,9 @@ def compare_cohorts_command(
         method=method,
         ref_distribution=ref_distribution,
         fixate_plotting_max=fixate_plotting_max,
+        area_threshold=area_threshold,
+        recompute_area_percent_threshold=recompute_area_percent_threshold,
+        recompute_face_percent_threshold=recompute_face_percent_threshold,
     )
 
 

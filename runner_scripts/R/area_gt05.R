@@ -16,10 +16,11 @@ request <- "STA-2026-009 Skull analysis KO variabiity"
 
 year_dirs <- list(
   "2024" = "/home/varhai/PRIMUS/data/83_IMPC_DATA/Bioimaging/SCREENad.Morpho&BodyComp/2024",
-  "2023" = "/home/varhai/PRIMUS/data/83_IMPC_DATA/Bioimaging/SCREENad.Morpho&BodyComp/2023"
+  "2023" = "/home/varhai/PRIMUS/data/83_IMPC_DATA/Bioimaging/SCREENad.Morpho&BodyComp/2023",
+  "2022" = "/home/varhai/PRIMUS/data/83_IMPC_DATA/Bioimaging/SCREENad.Morpho&BodyComp/2022"
 )
 
-out_base <- "/home/varhai/PRIMUS/data/83_REQUESTS/_Statistics/SCIENTIFIC_PROJECTS/Vendula_Novosadova/STA-2026-009 Skull analysis KO variabiity/Results/2026-02-24"
+out_base <- "/home/varhai/PRIMUS/data/83_REQUESTS/_Statistics/SCIENTIFIC_PROJECTS/Vendula_Novosadova/STA-2026-009 Skull analysis KO variabiity/Results/2026-03-13"
 dir.create(out_base, recursive = TRUE, showWarnings = FALSE)
 
 PROGRESS_EVERY <- 10
@@ -66,7 +67,12 @@ read_area05_one_year <- function(root_dir, year_label) {
         tmp_info <- fread(f)
         if (!("subject" %in% names(tmp_info))) next
 
-        tmp_info[, c("Gen", "Gender", "ID") := tstrsplit(subject, "_", fixed = TRUE)]
+        tmp_info[, c("Gen", "Gender") := tstrsplit(subject, "_", fixed = TRUE, keep = 1:2)]
+        tmp_info[, ID := fifelse(
+          grepl("^[^_]+_[^_]+_.+$", subject),
+          sub("^[^_]+_[^_]+_", "", subject),
+          NA_character_
+        )]
         exclude_ids <- c(exclude_ids, tmp_info[area_percent_mahal_gt_5 > OUTLIER_AREA_MAX, ID])
         bad_ids <- c(bad_ids, tmp_info[Gen != "wt" & area_percent_mahal_gt_5 > 0.5, ID])
       }
@@ -79,7 +85,11 @@ read_area05_one_year <- function(root_dir, year_label) {
         tmp_df <- fread(f)
         if (!("subject" %in% names(tmp_df))) next
 
-        tmp_df[, ID := tstrsplit(subject, "_", fixed = TRUE)[[3]]]
+        tmp_df[, ID := fifelse(
+          grepl("^[^_]+_[^_]+_.+$", subject),
+          sub("^[^_]+_[^_]+_", "", subject),
+          NA_character_
+        )]
         tmp_df <- tmp_df[ID %in% bad_ids]
         tmp_df[, ID := NULL]
 

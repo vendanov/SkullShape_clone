@@ -58,7 +58,8 @@ def read_vtk_polydata_points_faces(polydata: vtk.vtkPolyData):
 
 
 def compute_and_save_mean_mesh(cohort: Dict[str, vtk.vtkPolyData], output_file: str):
-    gpa = gpa_new(cohort)
+    # Use rigid GPA to preserve physical scale (similarity mode rescales meshes).
+    gpa = gpa_new(cohort, modes="rigid")
     mean_mesh = compute_mean_mesh(gpa)
     writer = vtk.vtkOBJWriter()
     writer.SetFileName(output_file)
