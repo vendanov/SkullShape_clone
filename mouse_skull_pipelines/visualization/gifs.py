@@ -169,7 +169,8 @@ def produce_gif_mean_diff(ref_mesh: vtk.vtkPolyData,
 def uproduce_gif_std(ref_mesh: vtk.vtkPolyData,
                     std_results: list,
                     output_gif_file: str,
-                     upper_limit: Optional[float] = None):
+                     upper_limit: Optional[float] = None,
+                     cmap_name: str = 'viridis'):
 
     from matplotlib import cm, animation
     from mpl_toolkits.mplot3d import Axes3D
@@ -181,7 +182,7 @@ def uproduce_gif_std(ref_mesh: vtk.vtkPolyData,
     p95 = np.percentile(std_norms, 95)
     # ????????: ??? ???? 95-?? ? ???????????? ? 95-??
     std_norms_clipped = np.clip(std_norms, a_min=None, a_max=p95)
-    cmap = plt.get_cmap('viridis')
+    cmap = plt.get_cmap(cmap_name)
     if upper_limit is not None:
         norm = plt.Normalize(vmin=0, vmax=upper_limit)
     else:

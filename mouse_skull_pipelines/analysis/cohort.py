@@ -801,6 +801,7 @@ def one_cohort_statistics(cohort: str,
                           reference_mouse: str,
                           result_dir: str,
                           upper_limit: Optional[float] = None,
+                          std_cmap: str = "viridis",
                           mahal_summary_csv: Optional[str] = None,
                           mahal_threshold: float = 5.0,
                           skip_variability_gif: bool = False,
@@ -831,7 +832,7 @@ def one_cohort_statistics(cohort: str,
         std_results = compute_facewise_centroid_std(coh_aligned)
         print("std_results", std_results)
         mesh_file = next(iter(coh_aligned.values()))
-        uproduce_gif_std(mesh_file,std_results, result_dir / f"{cohort.name}_std.gif", upper_limit=upper_limit)
+        uproduce_gif_std(mesh_file, std_results, result_dir / f"{cohort.name}_std.gif", upper_limit=upper_limit, cmap_name=std_cmap)
 
     if mahal_summary_csv is not None:
         if fast_outliers:
